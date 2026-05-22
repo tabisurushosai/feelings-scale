@@ -16,15 +16,29 @@ export interface FeelingLevel {
 export interface FeelingsState {
   selectedLevelId: FeelingLevelId;
   careCardsByLevel: CareCardPresetMap;
+  shouldKeepHistory: boolean;
+  feelingHistory: FeelingHistoryEntry[];
 }
 
 export interface FeelingsViewModel {
   levels: FeelingLevel[];
   selectedLevel: FeelingLevel;
   careCards: string[];
+  shouldKeepHistory: boolean;
+  feelingHistory: FeelingHistoryItem[];
+  hasHistory: boolean;
 }
 
 export const feelingsStateStorageKey = "feelingsState";
+
+export interface FeelingHistoryEntry {
+  levelId: FeelingLevelId;
+  selectedAt: string;
+}
+
+export interface FeelingHistoryItem extends FeelingHistoryEntry {
+  level: FeelingLevel;
+}
 
 export const feelingLevels: FeelingLevel[] = [
   {
@@ -63,6 +77,8 @@ export function createInitialFeelingsState(): FeelingsState {
   return {
     selectedLevelId: 1,
     careCardsByLevel: createDefaultCareCardsByLevel(),
+    shouldKeepHistory: false,
+    feelingHistory: [],
   };
 }
 
@@ -85,6 +101,11 @@ export function normalizeFeelingsState(value: unknown): FeelingsState {
     return {
       selectedLevelId: value.selectedLevelId,
       careCardsByLevel: normalizeCareCardsByLevel(value),
+      shouldKeepHistory:
+        "shouldKeepHistory" in value && typeof value.shouldKeepHistory === "boolean"
+          ? value.shouldKeepHistory
+          : initialState.shouldKeepHistory,
+      feelingHistory: normalizeFeelingHistory(value),
     };
   }
 
@@ -96,6 +117,31 @@ export function selectFeelingLevel(
   selectedLevelId: FeelingLevelId,
 ): FeelingsState {
   return { ...state, selectedLevelId };
+}
+
+export function recordFeelingSelection(
+  state: FeelingsState,
+  selectedLevelId: FeelingLevelId,
+  selectedAt: string,
+): FeelingsState {
+  const nextState = selectFeelingLevel(state, selectedLevelId);
+  if (!state.shouldKeepHistory || !isValidIsoDateTime(selectedAt)) return nextState;
+
+  return {
+    ...nextState,
+    feelingHistory: [...state.feelingHistory, { levelId: selectedLevelId, selectedAt }],
+  };
+}
+
+export function setFeelingHistoryRetention(
+  state: FeelingsState,
+  shouldKeepHistory: boolean,
+): FeelingsState {
+  return { ...state, shouldKeepHistory };
+}
+
+export function clearFeelingHistory(state: FeelingsState): FeelingsState {
+  return { ...state, feelingHistory: [] };
 }
 
 export function addCareCard(
@@ -164,11 +210,18 @@ export function getSelectedFeelingLevel(state: FeelingsState): FeelingLevel {
 
 export function createFeelingsViewModel(state: FeelingsState): FeelingsViewModel {
   const selectedLevel = getSelectedFeelingLevel(state);
+  const feelingHistory = state.feelingHistory.map<FeelingHistoryItem>((entry) => ({
+    ...entry,
+    level: feelingLevels.find((level) => level.id === entry.levelId) ?? feelingLevels[0],
+  }));
 
   return {
     levels: feelingLevels,
     selectedLevel,
     careCards: state.careCardsByLevel[selectedLevel.id],
+    shouldKeepHistory: state.shouldKeepHistory,
+    feelingHistory,
+    hasHistory: feelingHistory.length > 0,
   };
 }
 
@@ -195,4 +248,18 @@ function normalizeCareCardList(value: unknown, fallback: string[]): string[] {
     .filter((cardText) => cardText.length > 0);
 
   return careCards.length > 0 ? careCards : [...fallback];
+}
+
+function normalizeFeelingHistory(value: object): FeelingHistoryEntry[] {
+  if (!("feelingHistory" in value) || !Array.isArray(value.feelingHistory)) return [];
+
+  return value.feelingHistory.filter((entry): entry is FeelingHistoryEntry => {
+    if (typeof entry !== "object" || entry === null) return false;
+    if (!("levelId" in entry) || !isFeelingLevelId(entry.levelId)) return false;
+    return "selectedAt" in entry && typeof entry.selectedAt === "string" && isValidIsoDateTime(entry.selectedAt);
+  });
+}
+
+function isValidIsoDateTime(value: string): boolean {
+  return !Number.isNaN(Date.parse(value));
 }

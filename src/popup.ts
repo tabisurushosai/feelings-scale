@@ -3,10 +3,12 @@ import {
   type FeelingLevelId,
   type FeelingsState,
   addCareCard,
+  clearFeelingHistory,
   createFeelingsViewModel,
   createInitialFeelingsState,
   removeCareCard,
-  selectFeelingLevel,
+  recordFeelingSelection,
+  setFeelingHistoryRetention,
   updateCareCard,
 } from "./core/feelings";
 import { loadFeelingsState, saveFeelingsState } from "./core/feelingsPersistence";
@@ -108,7 +110,7 @@ function render(): void {
   if (!app) return;
 
   const viewModel = createFeelingsViewModel(state);
-  const { levels, selectedLevel, careCards } = viewModel;
+  const { levels, selectedLevel, careCards, shouldKeepHistory, feelingHistory, hasHistory } = viewModel;
   app.replaceChildren();
 
   const style = document.createElement("style");
@@ -196,6 +198,63 @@ function render(): void {
       grid-template-columns: 1fr auto;
       gap: 8px;
     }
+    .history-panel {
+      display: grid;
+      gap: 8px;
+      border-top: 1px solid #e4e4e4;
+      padding-top: 10px;
+    }
+    .history-controls {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .history-toggle {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      min-width: 0;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .history-toggle input { flex: 0 0 auto; }
+    .history-clear {
+      border: 1px solid #cfcfcf;
+      border-radius: 6px;
+      background: white;
+      padding: 7px 9px;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .history-list {
+      display: grid;
+      gap: 5px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      max-height: 120px;
+      overflow: auto;
+    }
+    .history-item {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 6px;
+      align-items: center;
+      border-left: 5px solid var(--history-color);
+      border-radius: 6px;
+      background: #fafafa;
+      padding: 6px 7px;
+      font-size: 12px;
+      line-height: 1.25;
+    }
+    .history-empty {
+      margin: 0;
+      color: #666;
+      font-size: 12px;
+      line-height: 1.35;
+    }
   `;
 
   const shell = document.createElement("main");
@@ -214,12 +273,90 @@ function render(): void {
   cardsSection.setAttribute("aria-label", "こうするといい");
   cardsSection.append(selectedHeading, renderCards(selectedLevel.id, careCards));
 
-  shell.append(levelGrid, cardsSection);
+  const historySection = document.createElement("section");
+  historySection.className = "history-panel";
+  historySection.setAttribute("aria-label", "ふりかえり履歴");
+
+  const historyControls = document.createElement("div");
+  historyControls.className = "history-controls";
+
+  const historyLabel = document.createElement("label");
+  historyLabel.className = "history-toggle";
+
+  const historyCheckbox = document.createElement("input");
+  historyCheckbox.type = "checkbox";
+  historyCheckbox.checked = shouldKeepHistory;
+  historyCheckbox.addEventListener("change", () => {
+    void handleHistoryRetentionChange(historyCheckbox.checked);
+  });
+
+  const historyToggleText = document.createElement("span");
+  historyToggleText.textContent = "選んだ記録を残す";
+
+  historyLabel.append(historyCheckbox, historyToggleText);
+
+  const clearHistoryButton = document.createElement("button");
+  clearHistoryButton.type = "button";
+  clearHistoryButton.className = "history-clear";
+  clearHistoryButton.textContent = "クリア";
+  clearHistoryButton.disabled = !hasHistory;
+  clearHistoryButton.addEventListener("click", () => {
+    void handleHistoryClear();
+  });
+
+  historyControls.append(historyLabel, clearHistoryButton);
+  historySection.append(historyControls);
+
+  if (hasHistory) {
+    const historyList = document.createElement("ul");
+    historyList.className = "history-list";
+
+    const recentHistory = feelingHistory.slice(-10).reverse();
+    for (const historyItem of recentHistory) {
+      const item = document.createElement("li");
+      item.className = "history-item";
+      item.style.setProperty("--history-color", historyItem.level.color);
+
+      const face = document.createElement("span");
+      face.textContent = historyItem.level.face;
+
+      const label = document.createElement("span");
+      label.textContent = historyItem.level.label;
+
+      const time = document.createElement("time");
+      time.dateTime = historyItem.selectedAt;
+      time.textContent = formatHistoryTime(historyItem.selectedAt);
+
+      item.append(face, label, time);
+      historyList.append(item);
+    }
+
+    historySection.append(historyList);
+  } else {
+    const emptyHistory = document.createElement("p");
+    emptyHistory.className = "history-empty";
+    emptyHistory.textContent = "記録はまだありません";
+    historySection.append(emptyHistory);
+  }
+
+  shell.append(levelGrid, cardsSection, historySection);
   app.append(style, shell);
 }
 
 async function handleLevelSelect(levelId: FeelingLevelId): Promise<void> {
-  state = selectFeelingLevel(state, levelId);
+  state = recordFeelingSelection(state, levelId, new Date().toISOString());
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handleHistoryRetentionChange(shouldKeepHistory: boolean): Promise<void> {
+  state = setFeelingHistoryRetention(state, shouldKeepHistory);
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handleHistoryClear(): Promise<void> {
+  state = clearFeelingHistory(state);
   render();
   await saveFeelingsState(store, state);
 }
@@ -252,3 +389,12 @@ async function init(): Promise<void> {
 }
 
 void init();
+
+function formatHistoryTime(selectedAt: string): string {
+  return new Intl.DateTimeFormat("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(selectedAt));
+}
