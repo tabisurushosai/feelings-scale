@@ -10,10 +10,12 @@ import {
   enterChildMode,
   enterParentMode,
   isValidParentPin,
+  markPremiumPurchased,
   removeCareCard,
   recordFeelingSelection,
   setParentPin,
   setFeelingHistoryRetention,
+  startPremiumTrial,
   updateCareCard,
 } from "./core/feelings";
 import type { CareCardPresetMap } from "./core/careCards";
@@ -53,6 +55,17 @@ interface PopupMessages {
   changePinButton: string;
   invalidPinMessage: string;
   wrongPinMessage: string;
+  premiumAria: string;
+  premiumTitle: string;
+  premiumActive: string;
+  premiumTrialActive: (days: number) => string;
+  premiumFree: string;
+  premiumExpired: string;
+  premiumStartTrial: string;
+  premiumCheckout: string;
+  premiumPurchased: string;
+  premiumRequired: string;
+  premiumHistoryRequired: string;
 }
 
 const messages = createPopupMessages();
@@ -93,6 +106,17 @@ function createPopupMessages(): PopupMessages {
     changePinButton: t("changePinButton"),
     invalidPinMessage: t("invalidPinMessage"),
     wrongPinMessage: t("wrongPinMessage"),
+    premiumAria: t("premiumAria"),
+    premiumTitle: t("premiumTitle"),
+    premiumActive: t("premiumActive"),
+    premiumTrialActive: (days) => t("premiumTrialActive", String(days)),
+    premiumFree: t("premiumFree"),
+    premiumExpired: t("premiumExpired"),
+    premiumStartTrial: t("premiumStartTrial"),
+    premiumCheckout: t("premiumCheckout"),
+    premiumPurchased: t("premiumPurchased"),
+    premiumRequired: t("premiumRequired"),
+    premiumHistoryRequired: t("premiumHistoryRequired"),
   };
 }
 
@@ -225,7 +249,7 @@ function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCa
 function render(): void {
   if (!app) return;
 
-  const viewModel = createFeelingsViewModel(state, levelLabels);
+  const viewModel = createFeelingsViewModel(state, levelLabels, new Date().toISOString());
   const {
     levels,
     selectedLevel,
@@ -236,6 +260,8 @@ function render(): void {
     mode,
     hasParentPin,
     canEditCareCards,
+    canUseHistory,
+    premium,
   } = viewModel;
   app.replaceChildren();
 
@@ -291,6 +317,51 @@ function render(): void {
       color: #9a3412;
       font-size: 12px;
       line-height: 1.35;
+    }
+    .premium-panel {
+      display: grid;
+      gap: 8px;
+      border: 1px solid #e2e2e2;
+      border-radius: 8px;
+      background: #fbfbfb;
+      padding: 9px;
+    }
+    .premium-title {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .premium-status,
+    .premium-note {
+      margin: 0;
+      color: #444;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .premium-actions {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .premium-button,
+    .premium-link {
+      box-sizing: border-box;
+      border: 1px solid #cfcfcf;
+      border-radius: 6px;
+      background: white;
+      color: #222;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.2;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .premium-button:disabled {
+      cursor: default;
+      opacity: 0.55;
     }
     .level-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
     .level-button {
@@ -452,6 +523,7 @@ function render(): void {
   shell.className = "popup-shell";
 
   const modePanel = renderModePanel(mode, hasParentPin);
+  const premiumPanel = renderPremiumPanel(premium);
 
   const levelGrid = document.createElement("section");
   levelGrid.className = "level-grid";
@@ -479,7 +551,7 @@ function render(): void {
   const historyCheckbox = document.createElement("input");
   historyCheckbox.type = "checkbox";
   historyCheckbox.checked = shouldKeepHistory;
-  historyCheckbox.disabled = mode !== "parent";
+  historyCheckbox.disabled = mode !== "parent" || !canUseHistory;
   historyCheckbox.addEventListener("change", () => {
     void handleHistoryRetentionChange(historyCheckbox.checked);
   });
@@ -493,7 +565,7 @@ function render(): void {
   clearHistoryButton.type = "button";
   clearHistoryButton.className = "history-clear";
   clearHistoryButton.textContent = messages.clearHistory;
-  clearHistoryButton.disabled = mode !== "parent" || !hasHistory;
+  clearHistoryButton.disabled = mode !== "parent" || !canUseHistory || !hasHistory;
   clearHistoryButton.addEventListener("click", () => {
     void handleHistoryClear();
   });
@@ -501,7 +573,12 @@ function render(): void {
   historyControls.append(historyLabel, clearHistoryButton);
   historySection.append(historyControls);
 
-  if (hasHistory) {
+  if (!canUseHistory) {
+    const premiumRequired = document.createElement("p");
+    premiumRequired.className = "history-empty";
+    premiumRequired.textContent = messages.premiumHistoryRequired;
+    historySection.append(premiumRequired);
+  } else if (hasHistory) {
     const historyList = document.createElement("ul");
     historyList.className = "history-list";
 
@@ -533,8 +610,67 @@ function render(): void {
     historySection.append(emptyHistory);
   }
 
-  shell.append(modePanel, levelGrid, cardsSection, historySection);
+  shell.append(modePanel, premiumPanel, levelGrid, cardsSection, historySection);
   app.append(style, shell);
+}
+
+function renderPremiumPanel(premium: ReturnType<typeof createFeelingsViewModel>["premium"]): HTMLElement {
+  const panel = document.createElement("section");
+  panel.className = "premium-panel";
+  panel.setAttribute("aria-label", messages.premiumAria);
+
+  const title = document.createElement("p");
+  title.className = "premium-title";
+  title.textContent = messages.premiumTitle;
+
+  const status = document.createElement("p");
+  status.className = "premium-status";
+  status.textContent = getPremiumStatusMessage(premium);
+
+  const note = document.createElement("p");
+  note.className = "premium-note";
+  note.textContent = messages.premiumRequired;
+
+  const actions = document.createElement("div");
+  actions.className = "premium-actions";
+
+  const trialButton = document.createElement("button");
+  trialButton.type = "button";
+  trialButton.className = "premium-button";
+  trialButton.textContent = messages.premiumStartTrial;
+  trialButton.disabled = !premium.isTrialAvailable;
+  trialButton.addEventListener("click", () => {
+    void handlePremiumTrialStart();
+  });
+
+  const checkoutLink = document.createElement("a");
+  checkoutLink.className = "premium-link";
+  checkoutLink.href = premium.checkoutUrl;
+  checkoutLink.target = "_blank";
+  checkoutLink.rel = "noreferrer";
+  checkoutLink.textContent = messages.premiumCheckout;
+
+  const purchasedButton = document.createElement("button");
+  purchasedButton.type = "button";
+  purchasedButton.className = "premium-button";
+  purchasedButton.textContent = messages.premiumPurchased;
+  purchasedButton.disabled = premium.status === "premium";
+  purchasedButton.addEventListener("click", () => {
+    void handlePremiumPurchased();
+  });
+
+  actions.append(trialButton, checkoutLink, purchasedButton);
+  panel.append(title, status, note, actions);
+  return panel;
+}
+
+function getPremiumStatusMessage(
+  premium: ReturnType<typeof createFeelingsViewModel>["premium"],
+): string {
+  if (premium.status === "premium") return messages.premiumActive;
+  if (premium.isTrialActive) return messages.premiumTrialActive(premium.trialDaysRemaining);
+  if (premium.status === "trial") return messages.premiumExpired;
+  return messages.premiumFree;
 }
 
 function renderModePanel(mode: string, hasParentPin: boolean): HTMLElement {
@@ -640,7 +776,7 @@ async function handleLevelSelect(levelId: FeelingLevelId): Promise<void> {
 
 async function handleHistoryRetentionChange(shouldKeepHistory: boolean): Promise<void> {
   parentModeMessage = "";
-  state = setFeelingHistoryRetention(state, shouldKeepHistory);
+  state = setFeelingHistoryRetention(state, shouldKeepHistory, new Date().toISOString());
   render();
   await saveFeelingsState(store, state);
 }
@@ -713,6 +849,20 @@ async function handleParentPinChange(parentPin: string): Promise<void> {
 
   parentModeMessage = "";
   state = setParentPin(state, parentPin);
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handlePremiumTrialStart(): Promise<void> {
+  parentModeMessage = "";
+  state = startPremiumTrial(state, new Date().toISOString());
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handlePremiumPurchased(): Promise<void> {
+  parentModeMessage = "";
+  state = markPremiumPurchased(state, new Date().toISOString());
   render();
   await saveFeelingsState(store, state);
 }

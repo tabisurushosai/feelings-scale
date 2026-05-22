@@ -22,6 +22,7 @@ export interface FeelingsState {
   feelingHistory: FeelingHistoryEntry[];
   mode: FeelingsMode;
   parentPin: string | null;
+  premium: PremiumState;
 }
 
 export interface FeelingsViewModel {
@@ -34,11 +35,16 @@ export interface FeelingsViewModel {
   mode: FeelingsMode;
   hasParentPin: boolean;
   canEditCareCards: boolean;
+  canUseHistory: boolean;
+  premium: PremiumViewModel;
 }
 
 export const feelingsStateStorageKey = "feelingsState";
+export const premiumTrialDays = 7;
+export const stripeCheckoutUrl = "https://checkout.stripe.com/c/pay/feelings-scale-premium";
 
 export type FeelingsMode = "child" | "parent";
+export type PremiumStatus = "free" | "trial" | "premium";
 
 export interface FeelingHistoryEntry {
   levelId: FeelingLevelId;
@@ -47,6 +53,21 @@ export interface FeelingHistoryEntry {
 
 export interface FeelingHistoryItem extends FeelingHistoryEntry {
   level: FeelingLevel;
+}
+
+export interface PremiumState {
+  status: PremiumStatus;
+  trialStartedAt: string | null;
+  purchasedAt: string | null;
+}
+
+export interface PremiumViewModel {
+  status: PremiumStatus;
+  isActive: boolean;
+  isTrialAvailable: boolean;
+  isTrialActive: boolean;
+  trialDaysRemaining: number;
+  checkoutUrl: string;
 }
 
 export const feelingLevels: FeelingLevel[] = [
@@ -92,6 +113,7 @@ export function createInitialFeelingsState(
     feelingHistory: [],
     mode: "child",
     parentPin: null,
+    premium: createInitialPremiumState(),
   };
 }
 
@@ -124,6 +146,7 @@ export function normalizeFeelingsState(
       feelingHistory: normalizeFeelingHistory(value),
       mode: normalizeFeelingsMode(value),
       parentPin: normalizeParentPin(value),
+      premium: normalizePremiumState(value),
     };
   }
 
@@ -143,7 +166,13 @@ export function recordFeelingSelection(
   selectedAt: string,
 ): FeelingsState {
   const nextState = selectFeelingLevel(state, selectedLevelId);
-  if (!state.shouldKeepHistory || !isValidIsoDateTime(selectedAt)) return nextState;
+  if (
+    !state.shouldKeepHistory ||
+    !isValidIsoDateTime(selectedAt) ||
+    !isPremiumActiveAt(state.premium, selectedAt)
+  ) {
+    return nextState;
+  }
 
   return {
     ...nextState,
@@ -154,7 +183,9 @@ export function recordFeelingSelection(
 export function setFeelingHistoryRetention(
   state: FeelingsState,
   shouldKeepHistory: boolean,
+  currentAt: string,
 ): FeelingsState {
+  if (shouldKeepHistory && !isPremiumActiveAt(state.premium, currentAt)) return state;
   return { ...state, shouldKeepHistory };
 }
 
@@ -253,6 +284,38 @@ export function removeCareCard(
   };
 }
 
+export function startPremiumTrial(
+  state: FeelingsState,
+  startedAt: string,
+): FeelingsState {
+  if (!isValidIsoDateTime(startedAt) || state.premium.status !== "free") return state;
+
+  return {
+    ...state,
+    premium: {
+      status: "trial",
+      trialStartedAt: startedAt,
+      purchasedAt: null,
+    },
+  };
+}
+
+export function markPremiumPurchased(
+  state: FeelingsState,
+  purchasedAt: string,
+): FeelingsState {
+  if (!isValidIsoDateTime(purchasedAt)) return state;
+
+  return {
+    ...state,
+    premium: {
+      status: "premium",
+      trialStartedAt: state.premium.trialStartedAt,
+      purchasedAt,
+    },
+  };
+}
+
 export function getSelectedFeelingLevel(
   state: FeelingsState,
   levelLabels?: FeelingLevelLabelMap,
@@ -264,9 +327,11 @@ export function getSelectedFeelingLevel(
 export function createFeelingsViewModel(
   state: FeelingsState,
   levelLabels?: FeelingLevelLabelMap,
+  currentAt = "",
 ): FeelingsViewModel {
   const levels = getLocalizedFeelingLevels(levelLabels);
   const selectedLevel = getSelectedFeelingLevel(state, levelLabels);
+  const premium = createPremiumViewModel(state.premium, currentAt);
   const feelingHistory = state.feelingHistory.map<FeelingHistoryItem>((entry) => ({
     ...entry,
     level: levels.find((level) => level.id === entry.levelId) ?? levels[0],
@@ -281,7 +346,33 @@ export function createFeelingsViewModel(
     hasHistory: feelingHistory.length > 0,
     mode: state.mode,
     hasParentPin: state.parentPin !== null,
-    canEditCareCards: state.mode === "parent",
+    canEditCareCards: state.mode === "parent" && premium.isActive,
+    canUseHistory: premium.isActive,
+    premium,
+  };
+}
+
+export function createPremiumViewModel(
+  premium: PremiumState,
+  currentAt: string,
+): PremiumViewModel {
+  const isTrialActive = isPremiumTrialActiveAt(premium, currentAt);
+
+  return {
+    status: premium.status,
+    isActive: premium.status === "premium" || isTrialActive,
+    isTrialAvailable: premium.status === "free",
+    isTrialActive,
+    trialDaysRemaining: getPremiumTrialDaysRemaining(premium, currentAt),
+    checkoutUrl: stripeCheckoutUrl,
+  };
+}
+
+function createInitialPremiumState(): PremiumState {
+  return {
+    status: "free",
+    trialStartedAt: null,
+    purchasedAt: null,
   };
 }
 
@@ -295,6 +386,44 @@ function normalizeParentPin(value: object): string | null {
 
   const normalizedPin = normalizePinInput(value.parentPin);
   return isValidParentPin(normalizedPin) ? normalizedPin : null;
+}
+
+function normalizePremiumState(value: object): PremiumState {
+  if (!("premium" in value) || typeof value.premium !== "object" || value.premium === null) {
+    return createInitialPremiumState();
+  }
+
+  const premium = value.premium as Record<string, unknown>;
+  const status = normalizePremiumStatus(premium.status);
+  const trialStartedAt = typeof premium.trialStartedAt === "string" && isValidIsoDateTime(premium.trialStartedAt)
+    ? premium.trialStartedAt
+    : null;
+  const purchasedAt = typeof premium.purchasedAt === "string" && isValidIsoDateTime(premium.purchasedAt)
+    ? premium.purchasedAt
+    : null;
+
+  if (status === "premium") {
+    return {
+      status,
+      trialStartedAt,
+      purchasedAt,
+    };
+  }
+
+  if (status === "trial" && trialStartedAt) {
+    return {
+      status,
+      trialStartedAt,
+      purchasedAt: null,
+    };
+  }
+
+  return createInitialPremiumState();
+}
+
+function normalizePremiumStatus(value: unknown): PremiumStatus {
+  if (value === "trial" || value === "premium") return value;
+  return "free";
 }
 
 function normalizePinInput(value: string): string {
@@ -359,4 +488,26 @@ function normalizeFeelingHistory(value: object): FeelingHistoryEntry[] {
 
 function isValidIsoDateTime(value: string): boolean {
   return !Number.isNaN(Date.parse(value));
+}
+
+function isPremiumActiveAt(premium: PremiumState, currentAt: string): boolean {
+  return premium.status === "premium" || isPremiumTrialActiveAt(premium, currentAt);
+}
+
+function isPremiumTrialActiveAt(premium: PremiumState, currentAt: string): boolean {
+  if (premium.status !== "trial" || !premium.trialStartedAt) return false;
+  if (!isValidIsoDateTime(currentAt)) return false;
+
+  const startedAtTime = Date.parse(premium.trialStartedAt);
+  const currentTime = Date.parse(currentAt);
+  const trialEndsAt = startedAtTime + premiumTrialDays * 24 * 60 * 60 * 1000;
+  return currentTime >= startedAtTime && currentTime < trialEndsAt;
+}
+
+function getPremiumTrialDaysRemaining(premium: PremiumState, currentAt: string): number {
+  if (!isPremiumTrialActiveAt(premium, currentAt) || !premium.trialStartedAt) return 0;
+
+  const trialEndsAt = Date.parse(premium.trialStartedAt) + premiumTrialDays * 24 * 60 * 60 * 1000;
+  const remainingMilliseconds = trialEndsAt - Date.parse(currentAt);
+  return Math.max(0, Math.ceil(remainingMilliseconds / (24 * 60 * 60 * 1000)));
 }
