@@ -18,6 +18,8 @@ export interface FeelingsState {
   careCardsByLevel: CareCardPresetMap;
   shouldKeepHistory: boolean;
   feelingHistory: FeelingHistoryEntry[];
+  mode: FeelingsMode;
+  parentPin: string | null;
 }
 
 export interface FeelingsViewModel {
@@ -27,9 +29,14 @@ export interface FeelingsViewModel {
   shouldKeepHistory: boolean;
   feelingHistory: FeelingHistoryItem[];
   hasHistory: boolean;
+  mode: FeelingsMode;
+  hasParentPin: boolean;
+  canEditCareCards: boolean;
 }
 
 export const feelingsStateStorageKey = "feelingsState";
+
+export type FeelingsMode = "child" | "parent";
 
 export interface FeelingHistoryEntry {
   levelId: FeelingLevelId;
@@ -79,6 +86,8 @@ export function createInitialFeelingsState(): FeelingsState {
     careCardsByLevel: createDefaultCareCardsByLevel(),
     shouldKeepHistory: false,
     feelingHistory: [],
+    mode: "child",
+    parentPin: null,
   };
 }
 
@@ -106,6 +115,8 @@ export function normalizeFeelingsState(value: unknown): FeelingsState {
           ? value.shouldKeepHistory
           : initialState.shouldKeepHistory,
       feelingHistory: normalizeFeelingHistory(value),
+      mode: normalizeFeelingsMode(value),
+      parentPin: normalizeParentPin(value),
     };
   }
 
@@ -142,6 +153,38 @@ export function setFeelingHistoryRetention(
 
 export function clearFeelingHistory(state: FeelingsState): FeelingsState {
   return { ...state, feelingHistory: [] };
+}
+
+export function setParentPin(state: FeelingsState, parentPin: string): FeelingsState {
+  const normalizedPin = normalizePinInput(parentPin);
+  if (!isValidParentPin(normalizedPin)) return state;
+
+  return {
+    ...state,
+    parentPin: normalizedPin,
+    mode: "parent",
+  };
+}
+
+export function enterParentMode(state: FeelingsState, parentPin: string): FeelingsState {
+  if (!state.parentPin) return setParentPin(state, parentPin);
+  if (normalizePinInput(parentPin) !== state.parentPin) return state;
+
+  return {
+    ...state,
+    mode: "parent",
+  };
+}
+
+export function enterChildMode(state: FeelingsState): FeelingsState {
+  return {
+    ...state,
+    mode: "child",
+  };
+}
+
+export function isValidParentPin(parentPin: string): boolean {
+  return /^\d{4}$/.test(parentPin);
 }
 
 export function addCareCard(
@@ -222,7 +265,26 @@ export function createFeelingsViewModel(state: FeelingsState): FeelingsViewModel
     shouldKeepHistory: state.shouldKeepHistory,
     feelingHistory,
     hasHistory: feelingHistory.length > 0,
+    mode: state.mode,
+    hasParentPin: state.parentPin !== null,
+    canEditCareCards: state.mode === "parent",
   };
+}
+
+function normalizeFeelingsMode(value: object): FeelingsMode {
+  if (!("mode" in value)) return "child";
+  return value.mode === "parent" || value.mode === "child" ? value.mode : "child";
+}
+
+function normalizeParentPin(value: object): string | null {
+  if (!("parentPin" in value) || typeof value.parentPin !== "string") return null;
+
+  const normalizedPin = normalizePinInput(value.parentPin);
+  return isValidParentPin(normalizedPin) ? normalizedPin : null;
+}
+
+function normalizePinInput(value: string): string {
+  return value.trim();
 }
 
 function normalizeCareCardsByLevel(value: object): CareCardPresetMap {

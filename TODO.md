@@ -5,7 +5,7 @@
 - [x] T003: 段階ごとの対処カードのプリセットを内蔵し、選択で表示
 - [x] T004: 対処カードの編集(段階ごとCRUD)を chrome.storage.local に保存
 - [x] T005: 選んだ記録の任意保持(クリア可)
-- [ ] T006: 保護者/子供モード切替を簡易PIN(storage.local)で実装
+- [x] T006: 保護者/子供モード切替を簡易PIN(storage.local)で実装
 - [ ] T007: 起動時に storage.local から全状態を復元
 - [ ] T008: _locales ja/en を chrome.i18n で全UIに適用
 - [ ] T009: Premiumゲート(7日トライアル + Stripe Checkout URL)。無料は基本、Premiumで対処カード自由編集+ふりかえり履歴

@@ -6,8 +6,12 @@ import {
   clearFeelingHistory,
   createFeelingsViewModel,
   createInitialFeelingsState,
+  enterChildMode,
+  enterParentMode,
+  isValidParentPin,
   removeCareCard,
   recordFeelingSelection,
+  setParentPin,
   setFeelingHistoryRetention,
   updateCareCard,
 } from "./core/feelings";
@@ -17,6 +21,7 @@ import { store } from "./storage";
 const app = document.querySelector<HTMLDivElement>("#app");
 
 let state: FeelingsState = createInitialFeelingsState();
+let parentModeMessage = "";
 
 function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HTMLButtonElement {
   const isSelected = level.id === selectedLevel.id;
@@ -52,7 +57,21 @@ function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HT
   return button;
 }
 
-function renderCards(levelId: FeelingLevelId, cardTexts: string[]): HTMLElement {
+function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCards: boolean): HTMLElement {
+  if (!canEditCareCards) {
+    const list = document.createElement("ul");
+    list.className = "care-card-list";
+
+    for (const cardText of cardTexts) {
+      const item = document.createElement("li");
+      item.className = "care-card-readonly";
+      item.textContent = cardText;
+      list.append(item);
+    }
+
+    return list;
+  }
+
   const editor = document.createElement("div");
   editor.className = "card-editor";
 
@@ -110,12 +129,72 @@ function render(): void {
   if (!app) return;
 
   const viewModel = createFeelingsViewModel(state);
-  const { levels, selectedLevel, careCards, shouldKeepHistory, feelingHistory, hasHistory } = viewModel;
+  const {
+    levels,
+    selectedLevel,
+    careCards,
+    shouldKeepHistory,
+    feelingHistory,
+    hasHistory,
+    mode,
+    hasParentPin,
+    canEditCareCards,
+  } = viewModel;
   app.replaceChildren();
 
   const style = document.createElement("style");
   style.textContent = `
     .popup-shell { display: grid; gap: 12px; }
+    .mode-panel {
+      display: grid;
+      gap: 8px;
+      border: 1px solid #e2e2e2;
+      border-radius: 8px;
+      background: #fbfbfb;
+      padding: 9px;
+    }
+    .mode-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .mode-label {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .mode-form {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+    }
+    .pin-input {
+      min-width: 0;
+      box-sizing: border-box;
+      border: 1px solid #d8d8d8;
+      border-radius: 6px;
+      padding: 8px 9px;
+      font: inherit;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+    .mode-button {
+      border: 1px solid #cfcfcf;
+      border-radius: 6px;
+      background: white;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .mode-message {
+      margin: 0;
+      color: #9a3412;
+      font-size: 12px;
+      line-height: 1.35;
+    }
     .level-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
     .level-button {
       appearance: none;
@@ -161,6 +240,21 @@ function render(): void {
     }
     .level-label { font-size: 11px; line-height: 1.2; text-align: center; overflow-wrap: anywhere; }
     .selected-heading { margin: 0; font-size: 16px; }
+    .care-card-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .care-card-readonly {
+      border-left: 6px solid ${selectedLevel.color};
+      border-radius: 8px;
+      background: #f7f7f7;
+      padding: 9px 10px;
+      font-size: 14px;
+      line-height: 1.35;
+    }
     .card-editor { display: grid; gap: 8px; }
     .care-card {
       border-left: 6px solid ${selectedLevel.color};
@@ -260,6 +354,8 @@ function render(): void {
   const shell = document.createElement("main");
   shell.className = "popup-shell";
 
+  const modePanel = renderModePanel(mode, hasParentPin);
+
   const levelGrid = document.createElement("section");
   levelGrid.className = "level-grid";
   levelGrid.setAttribute("aria-label", "今の気持ち");
@@ -271,7 +367,7 @@ function render(): void {
 
   const cardsSection = document.createElement("section");
   cardsSection.setAttribute("aria-label", "こうするといい");
-  cardsSection.append(selectedHeading, renderCards(selectedLevel.id, careCards));
+  cardsSection.append(selectedHeading, renderCards(selectedLevel.id, careCards, canEditCareCards));
 
   const historySection = document.createElement("section");
   historySection.className = "history-panel";
@@ -286,6 +382,7 @@ function render(): void {
   const historyCheckbox = document.createElement("input");
   historyCheckbox.type = "checkbox";
   historyCheckbox.checked = shouldKeepHistory;
+  historyCheckbox.disabled = mode !== "parent";
   historyCheckbox.addEventListener("change", () => {
     void handleHistoryRetentionChange(historyCheckbox.checked);
   });
@@ -299,7 +396,7 @@ function render(): void {
   clearHistoryButton.type = "button";
   clearHistoryButton.className = "history-clear";
   clearHistoryButton.textContent = "クリア";
-  clearHistoryButton.disabled = !hasHistory;
+  clearHistoryButton.disabled = mode !== "parent" || !hasHistory;
   clearHistoryButton.addEventListener("click", () => {
     void handleHistoryClear();
   });
@@ -339,29 +436,127 @@ function render(): void {
     historySection.append(emptyHistory);
   }
 
-  shell.append(levelGrid, cardsSection, historySection);
+  shell.append(modePanel, levelGrid, cardsSection, historySection);
   app.append(style, shell);
 }
 
+function renderModePanel(mode: string, hasParentPin: boolean): HTMLElement {
+  const panel = document.createElement("section");
+  panel.className = "mode-panel";
+  panel.setAttribute("aria-label", "モード切替");
+
+  const row = document.createElement("div");
+  row.className = "mode-row";
+
+  const label = document.createElement("p");
+  label.className = "mode-label";
+  label.textContent = mode === "parent" ? "保護者モード" : "子供モード";
+
+  const switchButton = document.createElement("button");
+  switchButton.type = "button";
+  switchButton.className = "mode-button";
+  switchButton.textContent = mode === "parent" ? "子供モードへ" : "保護者モードへ";
+
+  row.append(label, switchButton);
+  panel.append(row);
+
+  if (mode === "parent") {
+    switchButton.addEventListener("click", () => {
+      void handleEnterChildMode();
+    });
+    panel.append(renderPinChangeForm());
+  } else {
+    switchButton.disabled = true;
+    panel.append(renderParentUnlockForm(hasParentPin));
+  }
+
+  if (parentModeMessage) {
+    const message = document.createElement("p");
+    message.className = "mode-message";
+    message.textContent = parentModeMessage;
+    panel.append(message);
+  }
+
+  return panel;
+}
+
+function renderParentUnlockForm(hasParentPin: boolean): HTMLFormElement {
+  const form = document.createElement("form");
+  form.className = "mode-form";
+
+  const pinInput = document.createElement("input");
+  pinInput.className = "pin-input";
+  pinInput.type = "password";
+  pinInput.inputMode = "numeric";
+  pinInput.pattern = "\\d{4}";
+  pinInput.maxLength = 4;
+  pinInput.placeholder = hasParentPin ? "PIN" : "新しいPIN";
+  pinInput.setAttribute("aria-label", hasParentPin ? "保護者PIN" : "新しい保護者PIN");
+
+  const submitButton = document.createElement("button");
+  submitButton.type = "submit";
+  submitButton.className = "mode-button";
+  submitButton.textContent = hasParentPin ? "解除" : "作成";
+
+  form.append(pinInput, submitButton);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void handleEnterParentMode(pinInput.value);
+  });
+
+  return form;
+}
+
+function renderPinChangeForm(): HTMLFormElement {
+  const form = document.createElement("form");
+  form.className = "mode-form";
+
+  const pinInput = document.createElement("input");
+  pinInput.className = "pin-input";
+  pinInput.type = "password";
+  pinInput.inputMode = "numeric";
+  pinInput.pattern = "\\d{4}";
+  pinInput.maxLength = 4;
+  pinInput.placeholder = "新しいPIN";
+  pinInput.setAttribute("aria-label", "新しい保護者PIN");
+
+  const submitButton = document.createElement("button");
+  submitButton.type = "submit";
+  submitButton.className = "mode-button";
+  submitButton.textContent = "PIN変更";
+
+  form.append(pinInput, submitButton);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void handleParentPinChange(pinInput.value);
+  });
+
+  return form;
+}
+
 async function handleLevelSelect(levelId: FeelingLevelId): Promise<void> {
+  parentModeMessage = "";
   state = recordFeelingSelection(state, levelId, new Date().toISOString());
   render();
   await saveFeelingsState(store, state);
 }
 
 async function handleHistoryRetentionChange(shouldKeepHistory: boolean): Promise<void> {
+  parentModeMessage = "";
   state = setFeelingHistoryRetention(state, shouldKeepHistory);
   render();
   await saveFeelingsState(store, state);
 }
 
 async function handleHistoryClear(): Promise<void> {
+  parentModeMessage = "";
   state = clearFeelingHistory(state);
   render();
   await saveFeelingsState(store, state);
 }
 
 async function handleCareCardAdd(levelId: FeelingLevelId, cardText: string): Promise<void> {
+  parentModeMessage = "";
   state = addCareCard(state, levelId, cardText);
   render();
   await saveFeelingsState(store, state);
@@ -372,13 +567,55 @@ async function handleCareCardUpdate(
   cardIndex: number,
   cardText: string,
 ): Promise<void> {
+  parentModeMessage = "";
   state = updateCareCard(state, levelId, cardIndex, cardText);
   render();
   await saveFeelingsState(store, state);
 }
 
 async function handleCareCardRemove(levelId: FeelingLevelId, cardIndex: number): Promise<void> {
+  parentModeMessage = "";
   state = removeCareCard(state, levelId, cardIndex);
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handleEnterParentMode(parentPin: string): Promise<void> {
+  if (!isValidParentPin(parentPin.trim())) {
+    parentModeMessage = "PINは4桁の数字で入力してください";
+    render();
+    return;
+  }
+
+  const nextState = enterParentMode(state, parentPin);
+  if (nextState.mode !== "parent") {
+    parentModeMessage = "PINが違います";
+    render();
+    return;
+  }
+
+  parentModeMessage = "";
+  state = nextState;
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handleEnterChildMode(): Promise<void> {
+  parentModeMessage = "";
+  state = enterChildMode(state);
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handleParentPinChange(parentPin: string): Promise<void> {
+  if (!isValidParentPin(parentPin.trim())) {
+    parentModeMessage = "PINは4桁の数字で入力してください";
+    render();
+    return;
+  }
+
+  parentModeMessage = "";
+  state = setParentPin(state, parentPin);
   render();
   await saveFeelingsState(store, state);
 }
