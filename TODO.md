@@ -1,0 +1,14 @@
+# feelings-scale TODO
+- [ ] T001: src/popup.ts に popup骨格(5段階の気持ち選択 + 対処カード表示)を構築
+- [ ] T1B: 保存は src/storage.ts の store(get/set/remove)経由に統一し、状態・ロジックは src/core/ に chrome.*/DOM 非依存で分離する(将来PWA移植のため)
+- [ ] T002: 5段階(色+顔)を表示し選択できるようにする
+- [ ] T003: 段階ごとの対処カードのプリセットを内蔵し、選択で表示
+- [ ] T004: 対処カードの編集(段階ごとCRUD)を chrome.storage.local に保存
+- [ ] T005: 選んだ記録の任意保持(クリア可)
+- [ ] T006: 保護者/子供モード切替を簡易PIN(storage.local)で実装
+- [ ] T007: 起動時に storage.local から全状態を復元
+- [ ] T008: _locales ja/en を chrome.i18n で全UIに適用
+- [ ] T009: Premiumゲート(7日トライアル + Stripe Checkout URL)。無料は基本、Premiumで対処カード自由編集+ふりかえり履歴
+- [ ] T010: npm run build を通し ts/lint を解消
+- [ ] T011: release/feelings-scale.zip 生成(node_modules除外)
+- [ ] T012: legal/PRIVACY.md と TERMS.md 作成(外部通信なし・データ収集なし・医療効果を主張しない)
