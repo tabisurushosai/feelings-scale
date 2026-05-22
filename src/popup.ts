@@ -1,6 +1,7 @@
 import {
   type FeelingLevel,
   type FeelingLevelId,
+  type FeelingLevelLabelMap,
   type FeelingsState,
   addCareCard,
   clearFeelingHistory,
@@ -15,13 +16,109 @@ import {
   setFeelingHistoryRetention,
   updateCareCard,
 } from "./core/feelings";
+import type { CareCardPresetMap } from "./core/careCards";
 import { loadFeelingsState, saveFeelingsState } from "./core/feelingsPersistence";
 import { store } from "./storage";
 
 const app = document.querySelector<HTMLDivElement>("#app");
+const appTitle = document.querySelector<HTMLElement>("[data-i18n='appTitle']");
 
-let state: FeelingsState = createInitialFeelingsState();
+interface PopupMessages {
+  appTitle: string;
+  levelSelectAria: (levelLabel: string) => string;
+  cardInputAria: (index: number) => string;
+  deleteButton: string;
+  deleteCardAria: (cardText: string) => string;
+  addCardPlaceholder: string;
+  addCardAria: string;
+  addButton: string;
+  currentFeelingAria: string;
+  selectedHeading: (face: string, levelLabel: string) => string;
+  careCardsAria: string;
+  historyAria: string;
+  keepHistory: string;
+  clearHistory: string;
+  emptyHistory: string;
+  modeAria: string;
+  parentMode: string;
+  childMode: string;
+  switchToChildMode: string;
+  switchToParentMode: string;
+  pinPlaceholder: string;
+  newPinPlaceholder: string;
+  parentPinAria: string;
+  newParentPinAria: string;
+  unlockButton: string;
+  createButton: string;
+  changePinButton: string;
+  invalidPinMessage: string;
+  wrongPinMessage: string;
+}
+
+const messages = createPopupMessages();
+const levelLabels = createLevelLabels();
+const defaultCareCardsByLevel = createLocalizedDefaultCareCardsByLevel();
+
+let state: FeelingsState = createInitialFeelingsState(defaultCareCardsByLevel);
 let parentModeMessage = "";
+
+function createPopupMessages(): PopupMessages {
+  return {
+    appTitle: t("appTitle"),
+    levelSelectAria: (levelLabel) => t("levelSelectAria", levelLabel),
+    cardInputAria: (index) => t("cardInputAria", String(index)),
+    deleteButton: t("deleteButton"),
+    deleteCardAria: (cardText) => t("deleteCardAria", cardText),
+    addCardPlaceholder: t("addCardPlaceholder"),
+    addCardAria: t("addCardAria"),
+    addButton: t("addButton"),
+    currentFeelingAria: t("currentFeelingAria"),
+    selectedHeading: (face, levelLabel) => t("selectedHeading", [face, levelLabel]),
+    careCardsAria: t("careCardsAria"),
+    historyAria: t("historyAria"),
+    keepHistory: t("keepHistory"),
+    clearHistory: t("clearHistory"),
+    emptyHistory: t("emptyHistory"),
+    modeAria: t("modeAria"),
+    parentMode: t("parentMode"),
+    childMode: t("childMode"),
+    switchToChildMode: t("switchToChildMode"),
+    switchToParentMode: t("switchToParentMode"),
+    pinPlaceholder: t("pinPlaceholder"),
+    newPinPlaceholder: t("newPinPlaceholder"),
+    parentPinAria: t("parentPinAria"),
+    newParentPinAria: t("newParentPinAria"),
+    unlockButton: t("unlockButton"),
+    createButton: t("createButton"),
+    changePinButton: t("changePinButton"),
+    invalidPinMessage: t("invalidPinMessage"),
+    wrongPinMessage: t("wrongPinMessage"),
+  };
+}
+
+function createLevelLabels(): FeelingLevelLabelMap {
+  return {
+    1: t("level1Label"),
+    2: t("level2Label"),
+    3: t("level3Label"),
+    4: t("level4Label"),
+    5: t("level5Label"),
+  };
+}
+
+function createLocalizedDefaultCareCardsByLevel(): CareCardPresetMap {
+  return {
+    1: [t("careCard1_1"), t("careCard1_2"), t("careCard1_3")],
+    2: [t("careCard2_1"), t("careCard2_2"), t("careCard2_3")],
+    3: [t("careCard3_1"), t("careCard3_2"), t("careCard3_3")],
+    4: [t("careCard4_1"), t("careCard4_2"), t("careCard4_3")],
+    5: [t("careCard5_1"), t("careCard5_2"), t("careCard5_3")],
+  };
+}
+
+function t(messageName: string, substitutions?: string | string[]): string {
+  return chrome.i18n.getMessage(messageName, substitutions) || messageName;
+}
 
 function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HTMLButtonElement {
   const isSelected = level.id === selectedLevel.id;
@@ -30,7 +127,7 @@ function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HT
   button.className = "level-button";
   button.dataset.selected = String(isSelected);
   button.setAttribute("aria-pressed", String(isSelected));
-  button.setAttribute("aria-label", `${level.label}を選ぶ`);
+  button.setAttribute("aria-label", messages.levelSelectAria(level.label));
   button.style.setProperty("--level-color", level.color);
 
   const colorBand = document.createElement("span");
@@ -83,7 +180,7 @@ function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCa
     input.className = "card-input";
     input.type = "text";
     input.value = cardText;
-    input.setAttribute("aria-label", `対処カード${index + 1}`);
+    input.setAttribute("aria-label", messages.cardInputAria(index + 1));
     input.addEventListener("change", () => {
       void handleCareCardUpdate(levelId, index, input.value);
     });
@@ -91,8 +188,8 @@ function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCa
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "card-delete";
-    deleteButton.textContent = "削除";
-    deleteButton.setAttribute("aria-label", `${cardText}を削除`);
+    deleteButton.textContent = messages.deleteButton;
+    deleteButton.setAttribute("aria-label", messages.deleteCardAria(cardText));
     deleteButton.addEventListener("click", () => {
       void handleCareCardRemove(levelId, index);
     });
@@ -107,13 +204,13 @@ function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCa
   const addInput = document.createElement("input");
   addInput.className = "card-input";
   addInput.type = "text";
-  addInput.placeholder = "新しい対処カード";
-  addInput.setAttribute("aria-label", "新しい対処カード");
+  addInput.placeholder = messages.addCardPlaceholder;
+  addInput.setAttribute("aria-label", messages.addCardAria);
 
   const addButton = document.createElement("button");
   addButton.type = "submit";
   addButton.className = "card-add";
-  addButton.textContent = "追加";
+  addButton.textContent = messages.addButton;
 
   addForm.append(addInput, addButton);
   addForm.addEventListener("submit", (event) => {
@@ -128,7 +225,7 @@ function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCa
 function render(): void {
   if (!app) return;
 
-  const viewModel = createFeelingsViewModel(state);
+  const viewModel = createFeelingsViewModel(state, levelLabels);
   const {
     levels,
     selectedLevel,
@@ -358,20 +455,20 @@ function render(): void {
 
   const levelGrid = document.createElement("section");
   levelGrid.className = "level-grid";
-  levelGrid.setAttribute("aria-label", "今の気持ち");
+  levelGrid.setAttribute("aria-label", messages.currentFeelingAria);
   levelGrid.append(...levels.map((level) => renderLevelButton(level, selectedLevel)));
 
   const selectedHeading = document.createElement("h4");
   selectedHeading.className = "selected-heading";
-  selectedHeading.textContent = `${selectedLevel.face} ${selectedLevel.label} のとき`;
+  selectedHeading.textContent = messages.selectedHeading(selectedLevel.face, selectedLevel.label);
 
   const cardsSection = document.createElement("section");
-  cardsSection.setAttribute("aria-label", "こうするといい");
+  cardsSection.setAttribute("aria-label", messages.careCardsAria);
   cardsSection.append(selectedHeading, renderCards(selectedLevel.id, careCards, canEditCareCards));
 
   const historySection = document.createElement("section");
   historySection.className = "history-panel";
-  historySection.setAttribute("aria-label", "ふりかえり履歴");
+  historySection.setAttribute("aria-label", messages.historyAria);
 
   const historyControls = document.createElement("div");
   historyControls.className = "history-controls";
@@ -388,14 +485,14 @@ function render(): void {
   });
 
   const historyToggleText = document.createElement("span");
-  historyToggleText.textContent = "選んだ記録を残す";
+  historyToggleText.textContent = messages.keepHistory;
 
   historyLabel.append(historyCheckbox, historyToggleText);
 
   const clearHistoryButton = document.createElement("button");
   clearHistoryButton.type = "button";
   clearHistoryButton.className = "history-clear";
-  clearHistoryButton.textContent = "クリア";
+  clearHistoryButton.textContent = messages.clearHistory;
   clearHistoryButton.disabled = mode !== "parent" || !hasHistory;
   clearHistoryButton.addEventListener("click", () => {
     void handleHistoryClear();
@@ -432,7 +529,7 @@ function render(): void {
   } else {
     const emptyHistory = document.createElement("p");
     emptyHistory.className = "history-empty";
-    emptyHistory.textContent = "記録はまだありません";
+    emptyHistory.textContent = messages.emptyHistory;
     historySection.append(emptyHistory);
   }
 
@@ -443,19 +540,19 @@ function render(): void {
 function renderModePanel(mode: string, hasParentPin: boolean): HTMLElement {
   const panel = document.createElement("section");
   panel.className = "mode-panel";
-  panel.setAttribute("aria-label", "モード切替");
+  panel.setAttribute("aria-label", messages.modeAria);
 
   const row = document.createElement("div");
   row.className = "mode-row";
 
   const label = document.createElement("p");
   label.className = "mode-label";
-  label.textContent = mode === "parent" ? "保護者モード" : "子供モード";
+  label.textContent = mode === "parent" ? messages.parentMode : messages.childMode;
 
   const switchButton = document.createElement("button");
   switchButton.type = "button";
   switchButton.className = "mode-button";
-  switchButton.textContent = mode === "parent" ? "子供モードへ" : "保護者モードへ";
+  switchButton.textContent = mode === "parent" ? messages.switchToChildMode : messages.switchToParentMode;
 
   row.append(label, switchButton);
   panel.append(row);
@@ -490,13 +587,13 @@ function renderParentUnlockForm(hasParentPin: boolean): HTMLFormElement {
   pinInput.inputMode = "numeric";
   pinInput.pattern = "\\d{4}";
   pinInput.maxLength = 4;
-  pinInput.placeholder = hasParentPin ? "PIN" : "新しいPIN";
-  pinInput.setAttribute("aria-label", hasParentPin ? "保護者PIN" : "新しい保護者PIN");
+  pinInput.placeholder = hasParentPin ? messages.pinPlaceholder : messages.newPinPlaceholder;
+  pinInput.setAttribute("aria-label", hasParentPin ? messages.parentPinAria : messages.newParentPinAria);
 
   const submitButton = document.createElement("button");
   submitButton.type = "submit";
   submitButton.className = "mode-button";
-  submitButton.textContent = hasParentPin ? "解除" : "作成";
+  submitButton.textContent = hasParentPin ? messages.unlockButton : messages.createButton;
 
   form.append(pinInput, submitButton);
   form.addEventListener("submit", (event) => {
@@ -517,13 +614,13 @@ function renderPinChangeForm(): HTMLFormElement {
   pinInput.inputMode = "numeric";
   pinInput.pattern = "\\d{4}";
   pinInput.maxLength = 4;
-  pinInput.placeholder = "新しいPIN";
-  pinInput.setAttribute("aria-label", "新しい保護者PIN");
+  pinInput.placeholder = messages.newPinPlaceholder;
+  pinInput.setAttribute("aria-label", messages.newParentPinAria);
 
   const submitButton = document.createElement("button");
   submitButton.type = "submit";
   submitButton.className = "mode-button";
-  submitButton.textContent = "PIN変更";
+  submitButton.textContent = messages.changePinButton;
 
   form.append(pinInput, submitButton);
   form.addEventListener("submit", (event) => {
@@ -582,14 +679,14 @@ async function handleCareCardRemove(levelId: FeelingLevelId, cardIndex: number):
 
 async function handleEnterParentMode(parentPin: string): Promise<void> {
   if (!isValidParentPin(parentPin.trim())) {
-    parentModeMessage = "PINは4桁の数字で入力してください";
+    parentModeMessage = messages.invalidPinMessage;
     render();
     return;
   }
 
   const nextState = enterParentMode(state, parentPin);
   if (nextState.mode !== "parent") {
-    parentModeMessage = "PINが違います";
+    parentModeMessage = messages.wrongPinMessage;
     render();
     return;
   }
@@ -609,7 +706,7 @@ async function handleEnterChildMode(): Promise<void> {
 
 async function handleParentPinChange(parentPin: string): Promise<void> {
   if (!isValidParentPin(parentPin.trim())) {
-    parentModeMessage = "PINは4桁の数字で入力してください";
+    parentModeMessage = messages.invalidPinMessage;
     render();
     return;
   }
@@ -621,14 +718,16 @@ async function handleParentPinChange(parentPin: string): Promise<void> {
 }
 
 async function init(): Promise<void> {
-  state = await loadFeelingsState(store);
+  document.title = messages.appTitle;
+  if (appTitle) appTitle.textContent = messages.appTitle;
+  state = await loadFeelingsState(store, defaultCareCardsByLevel);
   render();
 }
 
 void init();
 
 function formatHistoryTime(selectedAt: string): string {
-  return new Intl.DateTimeFormat("ja-JP", {
+  return new Intl.DateTimeFormat(chrome.i18n.getUILanguage(), {
     month: "numeric",
     day: "numeric",
     hour: "2-digit",

@@ -1,13 +1,17 @@
 import type { Store } from "../storage";
+import type { CareCardPresetMap } from "./careCards";
 import {
   type FeelingsState,
   feelingsStateStorageKey,
   normalizeFeelingsState,
 } from "./feelings";
 
-export async function loadFeelingsState(store: Store): Promise<FeelingsState> {
+export async function loadFeelingsState(
+  store: Store,
+  defaultCareCardsByLevel?: CareCardPresetMap,
+): Promise<FeelingsState> {
   const savedState = await store.get<unknown>(feelingsStateStorageKey);
-  return normalizeFeelingsState(savedState);
+  return normalizeFeelingsState(savedState, defaultCareCardsByLevel);
 }
 
 export function saveFeelingsState(

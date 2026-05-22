@@ -7,7 +7,7 @@
 - [x] T005: 選んだ記録の任意保持(クリア可)
 - [x] T006: 保護者/子供モード切替を簡易PIN(storage.local)で実装
 - [x] T007: 起動時に storage.local から全状態を復元
-- [ ] T008: _locales ja/en を chrome.i18n で全UIに適用
+- [x] T008: _locales ja/en を chrome.i18n で全UIに適用
 - [ ] T009: Premiumゲート(7日トライアル + Stripe Checkout URL)。無料は基本、Premiumで対処カード自由編集+ふりかえり履歴
 - [ ] T010: npm run build を通し ts/lint を解消
 - [ ] T011: release/feelings-scale.zip 生成(node_modules除外)

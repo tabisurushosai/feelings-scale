@@ -13,6 +13,8 @@ export interface FeelingLevel {
   color: string;
 }
 
+export type FeelingLevelLabelMap = Record<FeelingLevelId, string>;
+
 export interface FeelingsState {
   selectedLevelId: FeelingLevelId;
   careCardsByLevel: CareCardPresetMap;
@@ -80,10 +82,12 @@ export const feelingLevels: FeelingLevel[] = [
   },
 ];
 
-export function createInitialFeelingsState(): FeelingsState {
+export function createInitialFeelingsState(
+  defaultCareCardsByLevel: CareCardPresetMap = createDefaultCareCardsByLevel(),
+): FeelingsState {
   return {
     selectedLevelId: 1,
-    careCardsByLevel: createDefaultCareCardsByLevel(),
+    careCardsByLevel: cloneCareCardsByLevel(defaultCareCardsByLevel),
     shouldKeepHistory: false,
     feelingHistory: [],
     mode: "child",
@@ -98,8 +102,11 @@ export function isFeelingLevelId(value: unknown): value is FeelingLevelId {
   );
 }
 
-export function normalizeFeelingsState(value: unknown): FeelingsState {
-  const initialState = createInitialFeelingsState();
+export function normalizeFeelingsState(
+  value: unknown,
+  defaultCareCardsByLevel: CareCardPresetMap = createDefaultCareCardsByLevel(),
+): FeelingsState {
+  const initialState = createInitialFeelingsState(defaultCareCardsByLevel);
 
   if (
     typeof value === "object" &&
@@ -109,7 +116,7 @@ export function normalizeFeelingsState(value: unknown): FeelingsState {
   ) {
     return {
       selectedLevelId: value.selectedLevelId,
-      careCardsByLevel: normalizeCareCardsByLevel(value),
+      careCardsByLevel: normalizeCareCardsByLevel(value, defaultCareCardsByLevel),
       shouldKeepHistory:
         "shouldKeepHistory" in value && typeof value.shouldKeepHistory === "boolean"
           ? value.shouldKeepHistory
@@ -246,20 +253,27 @@ export function removeCareCard(
   };
 }
 
-export function getSelectedFeelingLevel(state: FeelingsState): FeelingLevel {
-  const selectedLevel = feelingLevels.find((level) => level.id === state.selectedLevelId);
-  return selectedLevel ?? feelingLevels[0];
+export function getSelectedFeelingLevel(
+  state: FeelingsState,
+  levelLabels?: FeelingLevelLabelMap,
+): FeelingLevel {
+  const selectedLevel = getLocalizedFeelingLevels(levelLabels).find((level) => level.id === state.selectedLevelId);
+  return selectedLevel ?? getLocalizedFeelingLevels(levelLabels)[0];
 }
 
-export function createFeelingsViewModel(state: FeelingsState): FeelingsViewModel {
-  const selectedLevel = getSelectedFeelingLevel(state);
+export function createFeelingsViewModel(
+  state: FeelingsState,
+  levelLabels?: FeelingLevelLabelMap,
+): FeelingsViewModel {
+  const levels = getLocalizedFeelingLevels(levelLabels);
+  const selectedLevel = getSelectedFeelingLevel(state, levelLabels);
   const feelingHistory = state.feelingHistory.map<FeelingHistoryItem>((entry) => ({
     ...entry,
-    level: feelingLevels.find((level) => level.id === entry.levelId) ?? feelingLevels[0],
+    level: levels.find((level) => level.id === entry.levelId) ?? levels[0],
   }));
 
   return {
-    levels: feelingLevels,
+    levels,
     selectedLevel,
     careCards: state.careCardsByLevel[selectedLevel.id],
     shouldKeepHistory: state.shouldKeepHistory,
@@ -287,18 +301,39 @@ function normalizePinInput(value: string): string {
   return value.trim();
 }
 
-function normalizeCareCardsByLevel(value: object): CareCardPresetMap {
-  const defaults = createDefaultCareCardsByLevel();
-
+function normalizeCareCardsByLevel(
+  value: object,
+  defaultCareCardsByLevel: CareCardPresetMap,
+): CareCardPresetMap {
+  const defaults = cloneCareCardsByLevel(defaultCareCardsByLevel);
   if (!("careCardsByLevel" in value) || typeof value.careCardsByLevel !== "object" || value.careCardsByLevel === null) {
     return defaults;
   }
 
   return feelingLevels.reduce<CareCardPresetMap>((careCardsByLevel, level) => {
     const savedCards = (value.careCardsByLevel as Record<string, unknown>)[String(level.id)];
-    careCardsByLevel[level.id] = normalizeCareCardList(savedCards, getCareCardPresets(level.id));
+    careCardsByLevel[level.id] = normalizeCareCardList(savedCards, defaultCareCardsByLevel[level.id] ?? getCareCardPresets(level.id));
     return careCardsByLevel;
   }, defaults);
+}
+
+function getLocalizedFeelingLevels(levelLabels?: FeelingLevelLabelMap): FeelingLevel[] {
+  if (!levelLabels) return feelingLevels;
+
+  return feelingLevels.map((level) => ({
+    ...level,
+    label: levelLabels[level.id],
+  }));
+}
+
+function cloneCareCardsByLevel(careCardsByLevel: CareCardPresetMap): CareCardPresetMap {
+  return {
+    1: [...careCardsByLevel[1]],
+    2: [...careCardsByLevel[2]],
+    3: [...careCardsByLevel[3]],
+    4: [...careCardsByLevel[4]],
+    5: [...careCardsByLevel[5]],
+  };
 }
 
 function normalizeCareCardList(value: unknown, fallback: string[]): string[] {
