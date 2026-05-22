@@ -2,9 +2,12 @@ import {
   type FeelingLevel,
   type FeelingLevelId,
   type FeelingsState,
+  addCareCard,
   createFeelingsViewModel,
   createInitialFeelingsState,
+  removeCareCard,
   selectFeelingLevel,
+  updateCareCard,
 } from "./core/feelings";
 import { loadFeelingsState, saveFeelingsState } from "./core/feelingsPersistence";
 import { store } from "./storage";
@@ -47,18 +50,58 @@ function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HT
   return button;
 }
 
-function renderCards(cardTexts: string[]): HTMLUListElement {
-  const list = document.createElement("ul");
-  list.className = "card-list";
+function renderCards(levelId: FeelingLevelId, cardTexts: string[]): HTMLElement {
+  const editor = document.createElement("div");
+  editor.className = "card-editor";
 
-  for (const cardText of cardTexts) {
-    const item = document.createElement("li");
-    item.className = "care-card";
-    item.textContent = cardText;
-    list.append(item);
+  for (const [index, cardText] of cardTexts.entries()) {
+    const row = document.createElement("div");
+    row.className = "care-card";
+
+    const input = document.createElement("input");
+    input.className = "card-input";
+    input.type = "text";
+    input.value = cardText;
+    input.setAttribute("aria-label", `対処カード${index + 1}`);
+    input.addEventListener("change", () => {
+      void handleCareCardUpdate(levelId, index, input.value);
+    });
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "card-delete";
+    deleteButton.textContent = "削除";
+    deleteButton.setAttribute("aria-label", `${cardText}を削除`);
+    deleteButton.addEventListener("click", () => {
+      void handleCareCardRemove(levelId, index);
+    });
+
+    row.append(input, deleteButton);
+    editor.append(row);
   }
 
-  return list;
+  const addForm = document.createElement("form");
+  addForm.className = "card-add-form";
+
+  const addInput = document.createElement("input");
+  addInput.className = "card-input";
+  addInput.type = "text";
+  addInput.placeholder = "新しい対処カード";
+  addInput.setAttribute("aria-label", "新しい対処カード");
+
+  const addButton = document.createElement("button");
+  addButton.type = "submit";
+  addButton.className = "card-add";
+  addButton.textContent = "追加";
+
+  addForm.append(addInput, addButton);
+  addForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void handleCareCardAdd(levelId, addInput.value);
+  });
+
+  editor.append(addForm);
+  return editor;
 }
 
 function render(): void {
@@ -116,14 +159,42 @@ function render(): void {
     }
     .level-label { font-size: 11px; line-height: 1.2; text-align: center; overflow-wrap: anywhere; }
     .selected-heading { margin: 0; font-size: 16px; }
-    .card-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    .card-editor { display: grid; gap: 8px; }
     .care-card {
       border-left: 6px solid ${selectedLevel.color};
       border-radius: 8px;
       background: #f7f7f7;
-      padding: 10px 12px;
+      padding: 8px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .card-input {
+      min-width: 0;
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #d8d8d8;
+      border-radius: 6px;
+      padding: 8px 9px;
       font-size: 14px;
       line-height: 1.35;
+      font-family: inherit;
+    }
+    .card-delete,
+    .card-add {
+      border: 1px solid #cfcfcf;
+      border-radius: 6px;
+      background: white;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .card-add-form {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
     }
   `;
 
@@ -141,7 +212,7 @@ function render(): void {
 
   const cardsSection = document.createElement("section");
   cardsSection.setAttribute("aria-label", "こうするといい");
-  cardsSection.append(selectedHeading, renderCards(careCards));
+  cardsSection.append(selectedHeading, renderCards(selectedLevel.id, careCards));
 
   shell.append(levelGrid, cardsSection);
   app.append(style, shell);
@@ -149,6 +220,28 @@ function render(): void {
 
 async function handleLevelSelect(levelId: FeelingLevelId): Promise<void> {
   state = selectFeelingLevel(state, levelId);
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handleCareCardAdd(levelId: FeelingLevelId, cardText: string): Promise<void> {
+  state = addCareCard(state, levelId, cardText);
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handleCareCardUpdate(
+  levelId: FeelingLevelId,
+  cardIndex: number,
+  cardText: string,
+): Promise<void> {
+  state = updateCareCard(state, levelId, cardIndex, cardText);
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handleCareCardRemove(levelId: FeelingLevelId, cardIndex: number): Promise<void> {
+  state = removeCareCard(state, levelId, cardIndex);
   render();
   await saveFeelingsState(store, state);
 }

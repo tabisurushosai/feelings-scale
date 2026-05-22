@@ -13,3 +13,13 @@ export const careCardPresetsByLevel: CareCardPresetMap = {
 export function getCareCardPresets(levelId: FeelingLevelId): string[] {
   return careCardPresetsByLevel[levelId];
 }
+
+export function createDefaultCareCardsByLevel(): CareCardPresetMap {
+  return {
+    1: [...careCardPresetsByLevel[1]],
+    2: [...careCardPresetsByLevel[2]],
+    3: [...careCardPresetsByLevel[3]],
+    4: [...careCardPresetsByLevel[4]],
+    5: [...careCardPresetsByLevel[5]],
+  };
+}

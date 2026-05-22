@@ -3,7 +3,7 @@
 - [x] T1B: 保存は src/storage.ts の store(get/set/remove)経由に統一し、状態・ロジックは src/core/ に chrome.*/DOM 非依存で分離する(将来PWA移植のため)
 - [x] T002: 5段階(色+顔)を表示し選択できるようにする
 - [x] T003: 段階ごとの対処カードのプリセットを内蔵し、選択で表示
-- [ ] T004: 対処カードの編集(段階ごとCRUD)を chrome.storage.local に保存
+- [x] T004: 対処カードの編集(段階ごとCRUD)を chrome.storage.local に保存
 - [ ] T005: 選んだ記録の任意保持(クリア可)
 - [ ] T006: 保護者/子供モード切替を簡易PIN(storage.local)で実装
 - [ ] T007: 起動時に storage.local から全状態を復元
