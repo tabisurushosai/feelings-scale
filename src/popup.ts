@@ -47,11 +47,11 @@ function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HT
   return button;
 }
 
-function renderCards(level: FeelingLevel): HTMLUListElement {
+function renderCards(cardTexts: string[]): HTMLUListElement {
   const list = document.createElement("ul");
   list.className = "card-list";
 
-  for (const cardText of level.cards) {
+  for (const cardText of cardTexts) {
     const item = document.createElement("li");
     item.className = "care-card";
     item.textContent = cardText;
@@ -65,7 +65,7 @@ function render(): void {
   if (!app) return;
 
   const viewModel = createFeelingsViewModel(state);
-  const { levels, selectedLevel } = viewModel;
+  const { levels, selectedLevel, careCards } = viewModel;
   app.replaceChildren();
 
   const style = document.createElement("style");
@@ -141,7 +141,7 @@ function render(): void {
 
   const cardsSection = document.createElement("section");
   cardsSection.setAttribute("aria-label", "こうするといい");
-  cardsSection.append(selectedHeading, renderCards(selectedLevel));
+  cardsSection.append(selectedHeading, renderCards(careCards));
 
   shell.append(levelGrid, cardsSection);
   app.append(style, shell);
