@@ -1,1 +1,35 @@
-<!doctype html><html><head><meta charset="utf-8"><title></title></head><body style="width:320px;font-family:system-ui;padding:12px"><h3 data-i18n="appTitle" style="margin:0 0 8px"></h3><div id="app"></div><script type="module" src="popup.js"></script></body></html>
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title></title>
+    <style>
+      :root {
+        color: #22211f;
+        background: #fff7e8;
+        font-family: ui-rounded, "Hiragino Maru Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+      }
+
+      body {
+        box-sizing: border-box;
+        width: 360px;
+        margin: 0;
+        padding: 14px;
+        background:
+          linear-gradient(180deg, #fff9ed 0%, #f4fbff 100%);
+      }
+
+      [data-i18n="appTitle"] {
+        margin: 0 0 12px;
+        font-size: 19px;
+        line-height: 1.2;
+        color: #2f2b25;
+      }
+    </style>
+  </head>
+  <body>
+    <h3 data-i18n="appTitle"></h3>
+    <div id="app"></div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
