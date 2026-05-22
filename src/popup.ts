@@ -1,14 +1,17 @@
 import {
   type FeelingLevel,
+  type FeelingLevelId,
+  type FeelingsState,
+  createFeelingsViewModel,
   createInitialFeelingsState,
-  feelingLevels,
-  getSelectedFeelingLevel,
   selectFeelingLevel,
 } from "./core/feelings";
+import { loadFeelingsState, saveFeelingsState } from "./core/feelingsPersistence";
+import { store } from "./storage";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
-let state = createInitialFeelingsState();
+let state: FeelingsState = createInitialFeelingsState();
 
 function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HTMLButtonElement {
   const button = document.createElement("button");
@@ -28,8 +31,7 @@ function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HT
 
   button.append(face, label);
   button.addEventListener("click", () => {
-    state = selectFeelingLevel(state, level.id);
-    render();
+    void handleLevelSelect(level.id);
   });
 
   return button;
@@ -52,7 +54,8 @@ function renderCards(level: FeelingLevel): HTMLUListElement {
 function render(): void {
   if (!app) return;
 
-  const selectedLevel = getSelectedFeelingLevel(state);
+  const viewModel = createFeelingsViewModel(state);
+  const { levels, selectedLevel } = viewModel;
   app.replaceChildren();
 
   const style = document.createElement("style");
@@ -96,7 +99,7 @@ function render(): void {
   const levelGrid = document.createElement("section");
   levelGrid.className = "level-grid";
   levelGrid.setAttribute("aria-label", "今の気持ち");
-  levelGrid.append(...feelingLevels.map((level) => renderLevelButton(level, selectedLevel)));
+  levelGrid.append(...levels.map((level) => renderLevelButton(level, selectedLevel)));
 
   const selectedHeading = document.createElement("h4");
   selectedHeading.className = "selected-heading";
@@ -110,4 +113,15 @@ function render(): void {
   app.append(style, shell);
 }
 
-render();
+async function handleLevelSelect(levelId: FeelingLevelId): Promise<void> {
+  state = selectFeelingLevel(state, levelId);
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function init(): Promise<void> {
+  state = await loadFeelingsState(store);
+  render();
+}
+
+void init();

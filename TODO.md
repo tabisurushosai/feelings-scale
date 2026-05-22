@@ -1,6 +1,6 @@
 # feelings-scale TODO
 - [x] T001: src/popup.ts に popup骨格(5段階の気持ち選択 + 対処カード表示)を構築
-- [ ] T1B: 保存は src/storage.ts の store(get/set/remove)経由に統一し、状態・ロジックは src/core/ に chrome.*/DOM 非依存で分離する(将来PWA移植のため)
+- [x] T1B: 保存は src/storage.ts の store(get/set/remove)経由に統一し、状態・ロジックは src/core/ に chrome.*/DOM 非依存で分離する(将来PWA移植のため)
 - [ ] T002: 5段階(色+顔)を表示し選択できるようにする
 - [ ] T003: 段階ごとの対処カードのプリセットを内蔵し、選択で表示
 - [ ] T004: 対処カードの編集(段階ごとCRUD)を chrome.storage.local に保存

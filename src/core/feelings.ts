@@ -12,6 +12,13 @@ export interface FeelingsState {
   selectedLevelId: FeelingLevelId;
 }
 
+export interface FeelingsViewModel {
+  levels: FeelingLevel[];
+  selectedLevel: FeelingLevel;
+}
+
+export const feelingsStateStorageKey = "feelingsState";
+
 export const feelingLevels: FeelingLevel[] = [
   {
     id: 1,
@@ -54,6 +61,26 @@ export function createInitialFeelingsState(): FeelingsState {
   return { selectedLevelId: 1 };
 }
 
+export function isFeelingLevelId(value: unknown): value is FeelingLevelId {
+  return (
+    typeof value === "number" &&
+    feelingLevels.some((level) => level.id === value)
+  );
+}
+
+export function normalizeFeelingsState(value: unknown): FeelingsState {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "selectedLevelId" in value &&
+    isFeelingLevelId(value.selectedLevelId)
+  ) {
+    return { selectedLevelId: value.selectedLevelId };
+  }
+
+  return createInitialFeelingsState();
+}
+
 export function selectFeelingLevel(
   state: FeelingsState,
   selectedLevelId: FeelingLevelId,
@@ -64,4 +91,11 @@ export function selectFeelingLevel(
 export function getSelectedFeelingLevel(state: FeelingsState): FeelingLevel {
   const selectedLevel = feelingLevels.find((level) => level.id === state.selectedLevelId);
   return selectedLevel ?? feelingLevels[0];
+}
+
+export function createFeelingsViewModel(state: FeelingsState): FeelingsViewModel {
+  return {
+    levels: feelingLevels,
+    selectedLevel: getSelectedFeelingLevel(state),
+  };
 }

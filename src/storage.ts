@@ -5,8 +5,23 @@ export interface Store {
   set<T>(key: string, value: T): Promise<void>;
   remove(key: string): Promise<void>;
 }
+
 export const store: Store = {
-  get<T>(key: string) { return new Promise<T | null>((res) => chrome.storage.local.get(key, (o) => res((o[key] as T | undefined) ?? null))); },
-  set<T>(key: string, value: T) { return new Promise<void>((res) => chrome.storage.local.set({ [key]: value }, () => res())); },
-  remove(key: string) { return new Promise<void>((res) => chrome.storage.local.remove(key, () => res())); },
+  get<T>(key: string) {
+    return new Promise<T | null>((resolve) => {
+      chrome.storage.local.get(key, (values) => {
+        resolve((values[key] as T | undefined) ?? null);
+      });
+    });
+  },
+  set<T>(key: string, value: T) {
+    return new Promise<void>((resolve) => {
+      chrome.storage.local.set({ [key]: value }, () => resolve());
+    });
+  },
+  remove(key: string) {
+    return new Promise<void>((resolve) => {
+      chrome.storage.local.remove(key, () => resolve());
+    });
+  },
 };
