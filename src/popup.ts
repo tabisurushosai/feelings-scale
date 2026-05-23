@@ -1,4 +1,9 @@
 import {
+  createBreathingGuideViewModel,
+  getBreathingGuideDurationMs,
+  type BreathingGuideViewModel,
+} from "./core/breathingGuide";
+import {
   type FeelingLevel,
   type FeelingLevelId,
   type FeelingLevelLabelMap,
@@ -44,6 +49,12 @@ interface PopupMessages {
   undoButton: string;
   currentFeelingAria: string;
   sliderLabel: string;
+  breathingGuideAria: string;
+  breathingGuideTitle: string;
+  breathingGuideInhale: string;
+  breathingGuideExhale: string;
+  breathingGuideCycle: (cycleNumber: number, totalCycles: number) => string;
+  breathingGuideSeconds: (seconds: number) => string;
   selectedHeading: (face: string, levelLabel: string) => string;
   careCardsAria: string;
   historyAria: string;
@@ -87,6 +98,8 @@ let state: FeelingsState = createInitialFeelingsState(defaultCareCardsByLevel);
 let parentModeMessage = "";
 let levelToFocusAfterRender: FeelingLevelId | null = null;
 let pendingCareCardUndo: DeletedCareCard | null = null;
+let breathingGuideStartedAtMs: number | null = null;
+let breathingGuideTimerId: number | null = null;
 
 interface DeletedCareCard {
   levelId: FeelingLevelId;
@@ -110,6 +123,12 @@ function createPopupMessages(): PopupMessages {
     undoButton: t("undoButton"),
     currentFeelingAria: t("currentFeelingAria"),
     sliderLabel: t("sliderLabel"),
+    breathingGuideAria: t("breathingGuideAria"),
+    breathingGuideTitle: t("breathingGuideTitle"),
+    breathingGuideInhale: t("breathingGuideInhale"),
+    breathingGuideExhale: t("breathingGuideExhale"),
+    breathingGuideCycle: (cycleNumber, totalCycles) => t("breathingGuideCycle", [String(cycleNumber), String(totalCycles)]),
+    breathingGuideSeconds: (seconds) => t("breathingGuideSeconds", String(seconds)),
     selectedHeading: (face, levelLabel) => t("selectedHeading", [face, levelLabel]),
     careCardsAria: t("careCardsAria"),
     historyAria: t("historyAria"),
@@ -259,6 +278,51 @@ function renderLevelSlider(levels: FeelingLevel[], selectedLevel: FeelingLevel):
 
   sliderPanel.append(label, sliderRow, ticks);
   return sliderPanel;
+}
+
+function renderBreathingGuide(guide: BreathingGuideViewModel, selectedLevel: FeelingLevel): HTMLElement {
+  const panel = document.createElement("section");
+  panel.className = "breathing-guide";
+  panel.dataset.phase = guide.phase;
+  panel.style.setProperty("--breathing-color", selectedLevel.color);
+  panel.setAttribute("aria-label", messages.breathingGuideAria);
+  panel.setAttribute("aria-live", "polite");
+
+  const title = document.createElement("p");
+  title.className = "breathing-guide-title";
+  title.textContent = messages.breathingGuideTitle;
+
+  const body = document.createElement("div");
+  body.className = "breathing-guide-body";
+
+  const circle = document.createElement("div");
+  circle.className = "breathing-guide-circle";
+  circle.setAttribute("aria-hidden", "true");
+
+  const phaseText = document.createElement("p");
+  phaseText.className = "breathing-guide-phase";
+  phaseText.textContent = guide.phase === "inhale"
+    ? messages.breathingGuideInhale
+    : messages.breathingGuideExhale;
+
+  const meta = document.createElement("p");
+  meta.className = "breathing-guide-meta";
+  meta.textContent = `${messages.breathingGuideCycle(guide.cycleNumber, guide.totalCycles)} ${messages.breathingGuideSeconds(guide.secondsRemainingInPhase)}`;
+
+  const progress = document.createElement("div");
+  progress.className = "breathing-guide-progress";
+  progress.setAttribute("role", "progressbar");
+  progress.setAttribute("aria-valuemin", "0");
+  progress.setAttribute("aria-valuemax", "100");
+  progress.setAttribute("aria-valuenow", String(guide.progressPercent));
+
+  const progressFill = document.createElement("span");
+  progressFill.style.width = `${guide.progressPercent}%`;
+  progress.append(progressFill);
+
+  body.append(circle, phaseText, meta);
+  panel.append(title, body, progress);
+  return panel;
 }
 
 function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCards: boolean): HTMLElement {
@@ -575,6 +639,72 @@ function render(): void {
       opacity: 1;
       transform: scale(1.16);
     }
+    .breathing-guide {
+      display: grid;
+      gap: 10px;
+      border: 2px solid color-mix(in srgb, var(--breathing-color) 30%, white);
+      border-radius: 18px;
+      background: #fffefa;
+      padding: 12px;
+      box-shadow: 0 8px 18px color-mix(in srgb, var(--breathing-color) 12%, transparent);
+    }
+    .breathing-guide-title {
+      margin: 0;
+      color: #2f2b25;
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.3;
+    }
+    .breathing-guide-body {
+      display: grid;
+      grid-template-columns: 70px 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+    .breathing-guide-circle {
+      width: 54px;
+      height: 54px;
+      margin: 8px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--breathing-color) 38%, white);
+      box-shadow:
+        0 0 0 8px color-mix(in srgb, var(--breathing-color) 14%, transparent),
+        inset 0 0 0 3px rgba(255, 255, 255, 0.74);
+      transition: transform 900ms ease-in-out;
+    }
+    .breathing-guide[data-phase="inhale"] .breathing-guide-circle {
+      transform: scale(1.18);
+    }
+    .breathing-guide[data-phase="exhale"] .breathing-guide-circle {
+      transform: scale(0.82);
+    }
+    .breathing-guide-phase {
+      margin: 0;
+      color: #2f2b25;
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+    .breathing-guide-meta {
+      margin: 4px 0 0;
+      color: #4f463c;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .breathing-guide-progress {
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #eee6d8;
+    }
+    .breathing-guide-progress span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--breathing-color);
+      transition: width 240ms ease;
+    }
     .level-button {
       appearance: none;
       position: relative;
@@ -837,6 +967,7 @@ function render(): void {
   levelGrid.append(...levels.map((level) => renderLevelButton(level, selectedLevel)));
 
   const levelSlider = renderLevelSlider(levels, selectedLevel);
+  const breathingGuide = getActiveBreathingGuide();
 
   const selectedHeading = document.createElement("h4");
   selectedHeading.className = "selected-heading";
@@ -922,7 +1053,9 @@ function render(): void {
     historySection.append(emptyHistory);
   }
 
-  shell.append(modePanel, premiumPanel, levelGrid, levelSlider, cardsSection, historySection);
+  shell.append(modePanel, premiumPanel, levelGrid, levelSlider);
+  if (breathingGuide) shell.append(renderBreathingGuide(breathingGuide, selectedLevel));
+  shell.append(cardsSection, historySection);
   app.append(style, shell);
   focusPendingLevelButton();
 }
@@ -1027,6 +1160,45 @@ function getPremiumStatusMessage(
   return messages.premiumFree;
 }
 
+function getActiveBreathingGuide(): BreathingGuideViewModel | null {
+  if (breathingGuideStartedAtMs === null) return null;
+
+  const guide = createBreathingGuideViewModel(breathingGuideStartedAtMs, Date.now());
+  if (!guide.isComplete) return guide;
+
+  stopBreathingGuide();
+  return null;
+}
+
+function startBreathingGuide(): void {
+  breathingGuideStartedAtMs = Date.now();
+
+  if (breathingGuideTimerId !== null) {
+    window.clearInterval(breathingGuideTimerId);
+  }
+
+  breathingGuideTimerId = window.setInterval(() => {
+    if (breathingGuideStartedAtMs === null) {
+      stopBreathingGuide();
+      return;
+    }
+
+    if (Date.now() - breathingGuideStartedAtMs >= getBreathingGuideDurationMs()) {
+      stopBreathingGuide();
+    }
+
+    render();
+  }, 1000);
+}
+
+function stopBreathingGuide(): void {
+  breathingGuideStartedAtMs = null;
+  if (breathingGuideTimerId === null) return;
+
+  window.clearInterval(breathingGuideTimerId);
+  breathingGuideTimerId = null;
+}
+
 function renderModePanel(mode: string, hasParentPin: boolean): HTMLElement {
   const panel = document.createElement("section");
   panel.className = "mode-panel";
@@ -1125,6 +1297,7 @@ function renderPinChangeForm(): HTMLFormElement {
 async function handleLevelSelect(levelId: FeelingLevelId): Promise<void> {
   parentModeMessage = "";
   state = recordFeelingSelection(state, levelId, new Date().toISOString());
+  startBreathingGuide();
   render();
   await saveFeelingsState(store, state);
 }
