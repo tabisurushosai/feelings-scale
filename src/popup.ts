@@ -15,6 +15,7 @@ import {
   markPremiumPurchased,
   removeCareCard,
   recordFeelingSelection,
+  restoreCareCard,
   setParentPin,
   setFeelingHistoryRetention,
   startPremiumTrial,
@@ -36,13 +37,19 @@ interface PopupMessages {
   addCardPlaceholder: string;
   addCardAria: string;
   addButton: string;
+  emptyCareCards: string;
+  emptyCareCardsEdit: string;
+  careCardRemoved: (cardText: string) => string;
+  undoButton: string;
   currentFeelingAria: string;
   selectedHeading: (face: string, levelLabel: string) => string;
   careCardsAria: string;
   historyAria: string;
   keepHistory: string;
   clearHistory: string;
+  confirmClearHistory: string;
   emptyHistory: string;
+  emptyHistoryGuidance: string;
   modeAria: string;
   parentMode: string;
   childMode: string;
@@ -77,6 +84,13 @@ const defaultCareCardsByLevel = createLocalizedDefaultCareCardsByLevel();
 let state: FeelingsState = createInitialFeelingsState(defaultCareCardsByLevel);
 let parentModeMessage = "";
 let levelToFocusAfterRender: FeelingLevelId | null = null;
+let pendingCareCardUndo: DeletedCareCard | null = null;
+
+interface DeletedCareCard {
+  levelId: FeelingLevelId;
+  cardIndex: number;
+  cardText: string;
+}
 
 function createPopupMessages(): PopupMessages {
   return {
@@ -88,13 +102,19 @@ function createPopupMessages(): PopupMessages {
     addCardPlaceholder: t("addCardPlaceholder"),
     addCardAria: t("addCardAria"),
     addButton: t("addButton"),
+    emptyCareCards: t("emptyCareCards"),
+    emptyCareCardsEdit: t("emptyCareCardsEdit"),
+    careCardRemoved: (cardText) => t("careCardRemoved", cardText),
+    undoButton: t("undoButton"),
     currentFeelingAria: t("currentFeelingAria"),
     selectedHeading: (face, levelLabel) => t("selectedHeading", [face, levelLabel]),
     careCardsAria: t("careCardsAria"),
     historyAria: t("historyAria"),
     keepHistory: t("keepHistory"),
     clearHistory: t("clearHistory"),
+    confirmClearHistory: t("confirmClearHistory"),
     emptyHistory: t("emptyHistory"),
+    emptyHistoryGuidance: t("emptyHistoryGuidance"),
     modeAria: t("modeAria"),
     parentMode: t("parentMode"),
     childMode: t("childMode"),
@@ -189,6 +209,13 @@ function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HT
 
 function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCards: boolean): HTMLElement {
   if (!canEditCareCards) {
+    if (cardTexts.length === 0) {
+      const emptyMessage = document.createElement("p");
+      emptyMessage.className = "empty-state";
+      emptyMessage.textContent = messages.emptyCareCards;
+      return emptyMessage;
+    }
+
     const list = document.createElement("ul");
     list.className = "care-card-list";
 
@@ -204,6 +231,13 @@ function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCa
 
   const editor = document.createElement("div");
   editor.className = "card-editor";
+
+  if (cardTexts.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.className = "empty-state";
+    emptyMessage.textContent = messages.emptyCareCardsEdit;
+    editor.append(emptyMessage);
+  }
 
   for (const [index, cardText] of cardTexts.entries()) {
     const row = document.createElement("div");
@@ -253,6 +287,28 @@ function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCa
 
   editor.append(addForm);
   return editor;
+}
+
+function renderCareCardUndoNotice(levelId: FeelingLevelId): HTMLElement | null {
+  if (!pendingCareCardUndo || pendingCareCardUndo.levelId !== levelId) return null;
+
+  const notice = document.createElement("div");
+  notice.className = "undo-notice";
+  notice.setAttribute("role", "status");
+
+  const message = document.createElement("span");
+  message.textContent = messages.careCardRemoved(pendingCareCardUndo.cardText);
+
+  const undoButton = document.createElement("button");
+  undoButton.type = "button";
+  undoButton.className = "undo-button";
+  undoButton.textContent = messages.undoButton;
+  undoButton.addEventListener("click", () => {
+    void handleCareCardUndo();
+  });
+
+  notice.append(message, undoButton);
+  return notice;
 }
 
 function render(): void {
@@ -513,6 +569,17 @@ function render(): void {
       line-height: 1.4;
       box-shadow: 0 6px 14px rgba(66, 52, 33, 0.07);
     }
+    .empty-state {
+      margin: 0;
+      border: 2px dashed #d8cab4;
+      border-radius: 16px;
+      background: #fffefa;
+      padding: 13px 14px;
+      color: #5f5549;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
     .card-editor { display: grid; gap: 8px; }
     .care-card {
       border: 2px solid color-mix(in srgb, ${selectedLevel.color} 28%, white);
@@ -553,6 +620,32 @@ function render(): void {
       display: grid;
       grid-template-columns: 1fr auto;
       gap: 8px;
+    }
+    .undo-notice {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+      border: 2px solid #d7c6a8;
+      border-radius: 14px;
+      background: #fff7e8;
+      padding: 9px 10px;
+      color: #3c3429;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+    .undo-button {
+      min-height: 38px;
+      border: 2px solid #b9975b;
+      border-radius: 12px;
+      background: white;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
     }
     .history-panel {
       display: grid;
@@ -643,6 +736,8 @@ function render(): void {
   cardsSection.setAttribute("aria-label", messages.careCardsAria);
   cardsSection.setAttribute("aria-live", "polite");
   cardsSection.append(selectedHeading, renderCards(selectedLevel.id, careCards, canEditCareCards));
+  const careCardUndoNotice = renderCareCardUndoNotice(selectedLevel.id);
+  if (careCardUndoNotice) cardsSection.append(careCardUndoNotice);
 
   const historySection = document.createElement("section");
   historySection.className = "history-panel";
@@ -713,7 +808,7 @@ function render(): void {
   } else {
     const emptyHistory = document.createElement("p");
     emptyHistory.className = "history-empty";
-    emptyHistory.textContent = messages.emptyHistory;
+    emptyHistory.textContent = `${messages.emptyHistory} ${messages.emptyHistoryGuidance}`;
     historySection.append(emptyHistory);
   }
 
@@ -933,6 +1028,8 @@ async function handleHistoryRetentionChange(shouldKeepHistory: boolean): Promise
 
 async function handleHistoryClear(): Promise<void> {
   parentModeMessage = "";
+  if (!window.confirm(messages.confirmClearHistory)) return;
+
   state = clearFeelingHistory(state);
   render();
   await saveFeelingsState(store, state);
@@ -940,6 +1037,7 @@ async function handleHistoryClear(): Promise<void> {
 
 async function handleCareCardAdd(levelId: FeelingLevelId, cardText: string): Promise<void> {
   parentModeMessage = "";
+  pendingCareCardUndo = null;
   state = addCareCard(state, levelId, cardText);
   render();
   await saveFeelingsState(store, state);
@@ -951,6 +1049,7 @@ async function handleCareCardUpdate(
   cardText: string,
 ): Promise<void> {
   parentModeMessage = "";
+  pendingCareCardUndo = null;
   state = updateCareCard(state, levelId, cardIndex, cardText);
   render();
   await saveFeelingsState(store, state);
@@ -958,7 +1057,26 @@ async function handleCareCardUpdate(
 
 async function handleCareCardRemove(levelId: FeelingLevelId, cardIndex: number): Promise<void> {
   parentModeMessage = "";
+  const cardText = state.careCardsByLevel[levelId][cardIndex];
+  if (!cardText) return;
+
   state = removeCareCard(state, levelId, cardIndex);
+  pendingCareCardUndo = { levelId, cardIndex, cardText };
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handleCareCardUndo(): Promise<void> {
+  if (!pendingCareCardUndo) return;
+
+  parentModeMessage = "";
+  state = restoreCareCard(
+    state,
+    pendingCareCardUndo.levelId,
+    pendingCareCardUndo.cardIndex,
+    pendingCareCardUndo.cardText,
+  );
+  pendingCareCardUndo = null;
   render();
   await saveFeelingsState(store, state);
 }

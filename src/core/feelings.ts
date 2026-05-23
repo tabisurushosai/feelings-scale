@@ -303,6 +303,34 @@ export function removeCareCard(
   };
 }
 
+export function restoreCareCard(
+  state: FeelingsState,
+  levelId: FeelingLevelId,
+  cardIndex: number,
+  cardText: string,
+): FeelingsState {
+  const normalizedText = cardText.trim();
+  const careCards = state.careCardsByLevel[levelId];
+
+  if (!normalizedText || !Number.isInteger(cardIndex)) {
+    return state;
+  }
+
+  const insertIndex = Math.min(Math.max(cardIndex, 0), careCards.length);
+
+  return {
+    ...state,
+    careCardsByLevel: {
+      ...state.careCardsByLevel,
+      [levelId]: [
+        ...careCards.slice(0, insertIndex),
+        normalizedText,
+        ...careCards.slice(insertIndex),
+      ],
+    },
+  };
+}
+
 export function startPremiumTrial(
   state: FeelingsState,
   startedAt: string,
