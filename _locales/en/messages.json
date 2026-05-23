@@ -14,6 +14,7 @@
   "careCardRemoved": { "message": "Deleted $CARD$", "placeholders": { "card": { "content": "$1" } } },
   "undoButton": { "message": "Undo" },
   "currentFeelingAria": { "message": "Current feeling" },
+  "sliderLabel": { "message": "Choose with the scale" },
   "selectedHeading": { "message": "When it feels like $FACE$ $LEVEL$", "placeholders": { "face": { "content": "$1" }, "level": { "content": "$2" } } },
   "careCardsAria": { "message": "What can help" },
   "historyAria": { "message": "Reflection history" },

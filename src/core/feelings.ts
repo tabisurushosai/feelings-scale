@@ -124,6 +124,11 @@ export function isFeelingLevelId(value: unknown): value is FeelingLevelId {
   );
 }
 
+export function parseFeelingLevelId(value: string): FeelingLevelId | null {
+  const levelId = Number(value);
+  return isFeelingLevelId(levelId) ? levelId : null;
+}
+
 export function getNextFeelingLevelId(
   currentLevelId: FeelingLevelId,
   direction: -1 | 1,

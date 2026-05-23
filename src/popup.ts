@@ -13,6 +13,7 @@ import {
   getNextFeelingLevelId,
   isValidParentPin,
   markPremiumPurchased,
+  parseFeelingLevelId,
   removeCareCard,
   recordFeelingSelection,
   restoreCareCard,
@@ -42,6 +43,7 @@ interface PopupMessages {
   careCardRemoved: (cardText: string) => string;
   undoButton: string;
   currentFeelingAria: string;
+  sliderLabel: string;
   selectedHeading: (face: string, levelLabel: string) => string;
   careCardsAria: string;
   historyAria: string;
@@ -107,6 +109,7 @@ function createPopupMessages(): PopupMessages {
     careCardRemoved: (cardText) => t("careCardRemoved", cardText),
     undoButton: t("undoButton"),
     currentFeelingAria: t("currentFeelingAria"),
+    sliderLabel: t("sliderLabel"),
     selectedHeading: (face, levelLabel) => t("selectedHeading", [face, levelLabel]),
     careCardsAria: t("careCardsAria"),
     historyAria: t("historyAria"),
@@ -205,6 +208,57 @@ function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HT
   });
 
   return button;
+}
+
+function renderLevelSlider(levels: FeelingLevel[], selectedLevel: FeelingLevel): HTMLElement {
+  const sliderPanel = document.createElement("section");
+  sliderPanel.className = "level-slider-panel";
+
+  const label = document.createElement("label");
+  label.className = "level-slider-label";
+  label.htmlFor = "feeling-level-slider";
+  label.textContent = messages.sliderLabel;
+
+  const sliderRow = document.createElement("div");
+  sliderRow.className = "level-slider-row";
+
+  const selectedFace = document.createElement("span");
+  selectedFace.className = "level-slider-face";
+  selectedFace.setAttribute("aria-hidden", "true");
+  selectedFace.textContent = selectedLevel.face;
+
+  const slider = document.createElement("input");
+  slider.id = "feeling-level-slider";
+  slider.className = "level-slider";
+  slider.type = "range";
+  slider.min = "1";
+  slider.max = "5";
+  slider.step = "1";
+  slider.value = String(selectedLevel.id);
+  slider.setAttribute("aria-label", messages.currentFeelingAria);
+  slider.setAttribute("aria-valuetext", selectedLevel.label);
+  slider.style.setProperty("--slider-color", selectedLevel.color);
+  slider.addEventListener("input", () => {
+    const levelId = parseFeelingLevelId(slider.value);
+    if (!levelId || levelId === state.selectedLevelId) return;
+    void handleLevelSelect(levelId);
+  });
+
+  sliderRow.append(selectedFace, slider);
+
+  const ticks = document.createElement("div");
+  ticks.className = "level-slider-ticks";
+  ticks.setAttribute("aria-hidden", "true");
+  for (const level of levels) {
+    const tick = document.createElement("span");
+    tick.className = "level-slider-tick";
+    tick.dataset.selected = String(level.id === selectedLevel.id);
+    tick.textContent = level.face;
+    ticks.append(tick);
+  }
+
+  sliderPanel.append(label, sliderRow, ticks);
+  return sliderPanel;
 }
 
 function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCards: boolean): HTMLElement {
@@ -467,6 +521,60 @@ function render(): void {
       grid-template-columns: repeat(5, 1fr);
       gap: 8px;
     }
+    .level-slider-panel {
+      display: grid;
+      gap: 8px;
+      border: 2px solid #e7e0d3;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.72);
+      padding: 12px;
+    }
+    .level-slider-label {
+      color: #332f2a;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .level-slider-row {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+    .level-slider-face {
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: color-mix(in srgb, var(--slider-color, ${selectedLevel.color}) 22%, white);
+      font-size: 28px;
+      line-height: 1;
+    }
+    .level-slider {
+      width: 100%;
+      min-width: 0;
+      accent-color: var(--slider-color, ${selectedLevel.color});
+      cursor: pointer;
+    }
+    .level-slider-ticks {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      padding-left: 52px;
+    }
+    .level-slider-tick {
+      min-width: 0;
+      color: #3c3429;
+      font-size: 18px;
+      line-height: 1;
+      text-align: center;
+      opacity: 0.62;
+    }
+    .level-slider-tick[data-selected="true"] {
+      opacity: 1;
+      transform: scale(1.16);
+    }
     .level-button {
       appearance: none;
       position: relative;
@@ -728,6 +836,8 @@ function render(): void {
   levelGrid.setAttribute("aria-label", messages.currentFeelingAria);
   levelGrid.append(...levels.map((level) => renderLevelButton(level, selectedLevel)));
 
+  const levelSlider = renderLevelSlider(levels, selectedLevel);
+
   const selectedHeading = document.createElement("h4");
   selectedHeading.className = "selected-heading";
   selectedHeading.textContent = messages.selectedHeading(selectedLevel.face, selectedLevel.label);
@@ -812,7 +922,7 @@ function render(): void {
     historySection.append(emptyHistory);
   }
 
-  shell.append(modePanel, premiumPanel, levelGrid, cardsSection, historySection);
+  shell.append(modePanel, premiumPanel, levelGrid, levelSlider, cardsSection, historySection);
   app.append(style, shell);
   focusPendingLevelButton();
 }
