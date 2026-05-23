@@ -124,6 +124,25 @@ export function isFeelingLevelId(value: unknown): value is FeelingLevelId {
   );
 }
 
+export function getNextFeelingLevelId(
+  currentLevelId: FeelingLevelId,
+  direction: -1 | 1,
+): FeelingLevelId {
+  const currentIndex = feelingLevels.findIndex((level) => level.id === currentLevelId);
+  const nextIndex = Math.min(
+    feelingLevels.length - 1,
+    Math.max(0, currentIndex + direction),
+  );
+
+  return feelingLevels[nextIndex]?.id ?? feelingLevels[0].id;
+}
+
+export function getBoundaryFeelingLevelId(boundary: "first" | "last"): FeelingLevelId {
+  return boundary === "first"
+    ? feelingLevels[0].id
+    : feelingLevels[feelingLevels.length - 1].id;
+}
+
 export function normalizeFeelingsState(
   value: unknown,
   defaultCareCardsByLevel: CareCardPresetMap = createDefaultCareCardsByLevel(),

@@ -9,6 +9,8 @@ import {
   createInitialFeelingsState,
   enterChildMode,
   enterParentMode,
+  getBoundaryFeelingLevelId,
+  getNextFeelingLevelId,
   isValidParentPin,
   markPremiumPurchased,
   removeCareCard,
@@ -27,7 +29,7 @@ const appTitle = document.querySelector<HTMLElement>("[data-i18n='appTitle']");
 
 interface PopupMessages {
   appTitle: string;
-  levelSelectAria: (levelLabel: string) => string;
+  levelSelectAria: (levelNumber: number, levelLabel: string) => string;
   cardInputAria: (index: number) => string;
   deleteButton: string;
   deleteCardAria: (cardText: string) => string;
@@ -74,11 +76,12 @@ const defaultCareCardsByLevel = createLocalizedDefaultCareCardsByLevel();
 
 let state: FeelingsState = createInitialFeelingsState(defaultCareCardsByLevel);
 let parentModeMessage = "";
+let levelToFocusAfterRender: FeelingLevelId | null = null;
 
 function createPopupMessages(): PopupMessages {
   return {
     appTitle: t("appTitle"),
-    levelSelectAria: (levelLabel) => t("levelSelectAria", levelLabel),
+    levelSelectAria: (levelNumber, levelLabel) => t("levelSelectAria", [String(levelNumber), levelLabel]),
     cardInputAria: (index) => t("cardInputAria", String(index)),
     deleteButton: t("deleteButton"),
     deleteCardAria: (cardText) => t("deleteCardAria", cardText),
@@ -149,9 +152,12 @@ function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HT
   const button = document.createElement("button");
   button.type = "button";
   button.className = "level-button";
+  button.dataset.levelId = String(level.id);
   button.dataset.selected = String(isSelected);
-  button.setAttribute("aria-pressed", String(isSelected));
-  button.setAttribute("aria-label", messages.levelSelectAria(level.label));
+  button.tabIndex = isSelected ? 0 : -1;
+  button.setAttribute("role", "radio");
+  button.setAttribute("aria-checked", String(isSelected));
+  button.setAttribute("aria-label", messages.levelSelectAria(level.id, level.label));
   button.style.setProperty("--level-color", level.color);
 
   const colorBand = document.createElement("span");
@@ -173,6 +179,9 @@ function renderLevelButton(level: FeelingLevel, selectedLevel: FeelingLevel): HT
   button.append(colorBand, face, number, label);
   button.addEventListener("click", () => {
     void handleLevelSelect(level.id);
+  });
+  button.addEventListener("keydown", (event) => {
+    void handleLevelKeydown(event, level.id);
   });
 
   return button;
@@ -271,6 +280,21 @@ function render(): void {
       display: grid;
       gap: 14px;
     }
+    .popup-shell :focus-visible {
+      outline: 3px solid #1d4ed8;
+      outline-offset: 2px;
+    }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
     .mode-panel {
       display: grid;
       gap: 10px;
@@ -320,6 +344,11 @@ function render(): void {
       font-weight: 700;
       color: #2f2b25;
       cursor: pointer;
+    }
+    .mode-button:disabled {
+      color: #5f5f5f;
+      background: #f1f1f1;
+      cursor: default;
     }
     .mode-message {
       margin: 0;
@@ -374,7 +403,8 @@ function render(): void {
     }
     .premium-button:disabled {
       cursor: default;
-      opacity: 0.55;
+      color: #5f5f5f;
+      background: #f1f1f1;
     }
     .level-grid {
       display: grid;
@@ -383,6 +413,7 @@ function render(): void {
     }
     .level-button {
       appearance: none;
+      position: relative;
       min-width: 0;
       border: 3px solid rgba(255, 255, 255, 0.92);
       border-radius: 18px;
@@ -402,12 +433,28 @@ function render(): void {
     .level-button[data-selected="true"] {
       border-color: var(--level-color);
       box-shadow:
-        0 0 0 3px color-mix(in srgb, var(--level-color) 28%, white),
+        0 0 0 3px #1f2937,
         0 8px 16px color-mix(in srgb, var(--level-color) 22%, transparent);
       transform: translateY(-1px);
     }
+    .level-button[data-selected="true"]::after {
+      content: "✓";
+      position: absolute;
+      top: 13px;
+      right: 7px;
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: #1f2937;
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1;
+    }
     .level-button:focus-visible {
-      outline: 3px solid color-mix(in srgb, var(--level-color) 42%, white);
+      outline: 3px solid #1d4ed8;
       outline-offset: 2px;
     }
     .level-color {
@@ -542,6 +589,11 @@ function render(): void {
       font-weight: 700;
       cursor: pointer;
     }
+    .history-clear:disabled {
+      color: #5f5f5f;
+      background: #f1f1f1;
+      cursor: default;
+    }
     .history-list {
       display: grid;
       gap: 5px;
@@ -579,6 +631,7 @@ function render(): void {
 
   const levelGrid = document.createElement("section");
   levelGrid.className = "level-grid";
+  levelGrid.setAttribute("role", "radiogroup");
   levelGrid.setAttribute("aria-label", messages.currentFeelingAria);
   levelGrid.append(...levels.map((level) => renderLevelButton(level, selectedLevel)));
 
@@ -588,6 +641,7 @@ function render(): void {
 
   const cardsSection = document.createElement("section");
   cardsSection.setAttribute("aria-label", messages.careCardsAria);
+  cardsSection.setAttribute("aria-live", "polite");
   cardsSection.append(selectedHeading, renderCards(selectedLevel.id, careCards, canEditCareCards));
 
   const historySection = document.createElement("section");
@@ -641,6 +695,7 @@ function render(): void {
       item.style.setProperty("--history-color", historyItem.level.color);
 
       const face = document.createElement("span");
+      face.setAttribute("aria-hidden", "true");
       face.textContent = historyItem.level.face;
 
       const label = document.createElement("span");
@@ -664,6 +719,7 @@ function render(): void {
 
   shell.append(modePanel, premiumPanel, levelGrid, cardsSection, historySection);
   app.append(style, shell);
+  focusPendingLevelButton();
 }
 
 function renderPremiumPanel(premium: ReturnType<typeof createFeelingsViewModel>["premium"]): HTMLElement {
@@ -716,6 +772,47 @@ function renderPremiumPanel(premium: ReturnType<typeof createFeelingsViewModel>[
   return panel;
 }
 
+async function handleLevelKeydown(
+  event: KeyboardEvent,
+  currentLevelId: FeelingLevelId,
+): Promise<void> {
+  const nextLevelId = getKeyboardTargetLevelId(event.key, currentLevelId);
+  if (!nextLevelId) return;
+
+  event.preventDefault();
+  if (nextLevelId === currentLevelId) return;
+
+  levelToFocusAfterRender = nextLevelId;
+  await handleLevelSelect(nextLevelId);
+}
+
+function getKeyboardTargetLevelId(
+  key: string,
+  currentLevelId: FeelingLevelId,
+): FeelingLevelId | null {
+  if (key === "ArrowRight" || key === "ArrowDown") {
+    return getNextFeelingLevelId(currentLevelId, 1);
+  }
+
+  if (key === "ArrowLeft" || key === "ArrowUp") {
+    return getNextFeelingLevelId(currentLevelId, -1);
+  }
+
+  if (key === "Home") return getBoundaryFeelingLevelId("first");
+  if (key === "End") return getBoundaryFeelingLevelId("last");
+  return null;
+}
+
+function focusPendingLevelButton(): void {
+  if (!levelToFocusAfterRender || !app) return;
+
+  const levelButton = app.querySelector<HTMLButtonElement>(
+    `.level-button[data-level-id="${levelToFocusAfterRender}"]`,
+  );
+  levelToFocusAfterRender = null;
+  levelButton?.focus();
+}
+
 function getPremiumStatusMessage(
   premium: ReturnType<typeof createFeelingsViewModel>["premium"],
 ): string {
@@ -758,6 +855,7 @@ function renderModePanel(mode: string, hasParentPin: boolean): HTMLElement {
   if (parentModeMessage) {
     const message = document.createElement("p");
     message.className = "mode-message";
+    message.setAttribute("role", "alert");
     message.textContent = parentModeMessage;
     panel.append(message);
   }

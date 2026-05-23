@@ -2,7 +2,7 @@
   "extName": { "message": "Feelings Scale" },
   "extDesc": { "message": "Pick how you feel on a 5-level scale and get coping cards for that level. Supports self-regulation." },
   "appTitle": { "message": "Feelings Scale" },
-  "levelSelectAria": { "message": "Choose $LEVEL$", "placeholders": { "level": { "content": "$1" } } },
+  "levelSelectAria": { "message": "Choose level $NUMBER$, $LEVEL$", "placeholders": { "number": { "content": "$1" }, "level": { "content": "$2" } } },
   "cardInputAria": { "message": "Coping card $NUMBER$", "placeholders": { "number": { "content": "$1" } } },
   "deleteButton": { "message": "Delete" },
   "deleteCardAria": { "message": "Delete $CARD$", "placeholders": { "card": { "content": "$1" } } },

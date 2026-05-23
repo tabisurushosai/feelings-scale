@@ -2,7 +2,7 @@
   "extName": { "message": "きもちものさし" },
   "extDesc": { "message": "今の気持ちを5段階から選ぶと、その段階の「こうするといい」対処カードが出る。感情の自己調整を支援。" },
   "appTitle": { "message": "きもちものさし" },
-  "levelSelectAria": { "message": "$LEVEL$を選ぶ", "placeholders": { "level": { "content": "$1" } } },
+  "levelSelectAria": { "message": "レベル$NUMBER$、$LEVEL$を選ぶ", "placeholders": { "number": { "content": "$1" }, "level": { "content": "$2" } } },
   "cardInputAria": { "message": "対処カード$NUMBER$", "placeholders": { "number": { "content": "$1" } } },
   "deleteButton": { "message": "削除" },
   "deleteCardAria": { "message": "$CARD$を削除", "placeholders": { "card": { "content": "$1" } } },
