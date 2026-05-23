@@ -18,6 +18,7 @@ export type FeelingLevelLabelMap = Record<FeelingLevelId, string>;
 export interface FeelingsState {
   selectedLevelId: FeelingLevelId;
   careCardsByLevel: CareCardPresetMap;
+  favoriteCareCardsByLevel: CareCardPresetMap;
   shouldKeepHistory: boolean;
   feelingHistory: FeelingHistoryEntry[];
   mode: FeelingsMode;
@@ -28,7 +29,7 @@ export interface FeelingsState {
 export interface FeelingsViewModel {
   levels: FeelingLevel[];
   selectedLevel: FeelingLevel;
-  careCards: string[];
+  careCards: CareCardViewItem[];
   shouldKeepHistory: boolean;
   feelingHistory: FeelingHistoryItem[];
   hasHistory: boolean;
@@ -37,6 +38,12 @@ export interface FeelingsViewModel {
   canEditCareCards: boolean;
   canUseHistory: boolean;
   premium: PremiumViewModel;
+}
+
+export interface CareCardViewItem {
+  text: string;
+  originalIndex: number;
+  isFavorite: boolean;
 }
 
 export const feelingsStateStorageKey = "feelingsState";
@@ -109,6 +116,7 @@ export function createInitialFeelingsState(
   return {
     selectedLevelId: 1,
     careCardsByLevel: cloneCareCardsByLevel(defaultCareCardsByLevel),
+    favoriteCareCardsByLevel: createEmptyCareCardsByLevel(),
     shouldKeepHistory: false,
     feelingHistory: [],
     mode: "child",
@@ -161,6 +169,7 @@ export function normalizeFeelingsState(
       ? value.selectedLevelId
       : initialState.selectedLevelId,
     careCardsByLevel: normalizeCareCardsByLevel(value, defaultCareCardsByLevel),
+    favoriteCareCardsByLevel: normalizeFavoriteCareCardsByLevel(value, defaultCareCardsByLevel),
     shouldKeepHistory:
       typeof value.shouldKeepHistory === "boolean"
         ? value.shouldKeepHistory
@@ -261,6 +270,28 @@ export function addCareCard(
   };
 }
 
+export function toggleCareCardFavorite(
+  state: FeelingsState,
+  levelId: FeelingLevelId,
+  cardIndex: number,
+): FeelingsState {
+  const cardText = state.careCardsByLevel[levelId][cardIndex]?.trim();
+  if (!cardText) return state;
+
+  const favorites = state.favoriteCareCardsByLevel[levelId];
+  const isFavorite = favorites.includes(cardText);
+
+  return {
+    ...state,
+    favoriteCareCardsByLevel: {
+      ...state.favoriteCareCardsByLevel,
+      [levelId]: isFavorite
+        ? favorites.filter((favorite) => favorite !== cardText)
+        : [...favorites, cardText],
+    },
+  };
+}
+
 export function updateCareCard(
   state: FeelingsState,
   levelId: FeelingLevelId,
@@ -279,6 +310,12 @@ export function updateCareCard(
     careCardsByLevel: {
       ...state.careCardsByLevel,
       [levelId]: careCards.map((careCard, index) => (index === cardIndex ? normalizedText : careCard)),
+    },
+    favoriteCareCardsByLevel: {
+      ...state.favoriteCareCardsByLevel,
+      [levelId]: state.favoriteCareCardsByLevel[levelId].map((favorite) => (
+        favorite === careCards[cardIndex] ? normalizedText : favorite
+      )),
     },
   };
 }
@@ -299,6 +336,10 @@ export function removeCareCard(
     careCardsByLevel: {
       ...state.careCardsByLevel,
       [levelId]: careCards.filter((_, index) => index !== cardIndex),
+    },
+    favoriteCareCardsByLevel: {
+      ...state.favoriteCareCardsByLevel,
+      [levelId]: state.favoriteCareCardsByLevel[levelId].filter((favorite) => favorite !== careCards[cardIndex]),
     },
   };
 }
@@ -387,7 +428,10 @@ export function createFeelingsViewModel(
   return {
     levels,
     selectedLevel,
-    careCards: state.careCardsByLevel[selectedLevel.id],
+    careCards: createCareCardViewItems(
+      state.careCardsByLevel[selectedLevel.id],
+      state.favoriteCareCardsByLevel[selectedLevel.id],
+    ),
     shouldKeepHistory: state.shouldKeepHistory,
     feelingHistory,
     hasHistory: feelingHistory.length > 0,
@@ -397,6 +441,19 @@ export function createFeelingsViewModel(
     canUseHistory: premium.isActive,
     premium,
   };
+}
+
+function createCareCardViewItems(
+  careCards: string[],
+  favoriteCareCards: string[],
+): CareCardViewItem[] {
+  return careCards
+    .map<CareCardViewItem>((text, originalIndex) => ({
+      text,
+      originalIndex,
+      isFavorite: favoriteCareCards.includes(text),
+    }))
+    .sort((a, b) => Number(b.isFavorite) - Number(a.isFavorite) || a.originalIndex - b.originalIndex);
 }
 
 export function createPremiumViewModel(
@@ -493,6 +550,23 @@ function normalizeCareCardsByLevel(
   }, defaults);
 }
 
+function normalizeFavoriteCareCardsByLevel(
+  value: Record<string, unknown>,
+  defaultCareCardsByLevel: CareCardPresetMap,
+): CareCardPresetMap {
+  const careCardsByLevel = normalizeCareCardsByLevel(value, defaultCareCardsByLevel);
+  const defaults = createEmptyCareCardsByLevel();
+  if (!isRecord(value.favoriteCareCardsByLevel)) return defaults;
+
+  const savedFavoritesByLevel = value.favoriteCareCardsByLevel;
+  return feelingLevels.reduce<CareCardPresetMap>((favoriteCareCardsByLevel, level) => {
+    const savedFavorites = savedFavoritesByLevel[String(level.id)];
+    const careCards = careCardsByLevel[level.id];
+    favoriteCareCardsByLevel[level.id] = normalizeFavoriteCareCardList(savedFavorites, careCards);
+    return favoriteCareCardsByLevel;
+  }, defaults);
+}
+
 function getLocalizedFeelingLevels(levelLabels?: FeelingLevelLabelMap): FeelingLevel[] {
   if (!levelLabels) return feelingLevels;
 
@@ -512,6 +586,16 @@ function cloneCareCardsByLevel(careCardsByLevel: CareCardPresetMap): CareCardPre
   };
 }
 
+function createEmptyCareCardsByLevel(): CareCardPresetMap {
+  return {
+    1: [],
+    2: [],
+    3: [],
+    4: [],
+    5: [],
+  };
+}
+
 function normalizeCareCardList(value: unknown, fallback: string[]): string[] {
   if (!Array.isArray(value)) return [...fallback];
 
@@ -521,6 +605,22 @@ function normalizeCareCardList(value: unknown, fallback: string[]): string[] {
     .filter((cardText) => cardText.length > 0);
 
   return careCards.length > 0 ? careCards : [...fallback];
+}
+
+function normalizeFavoriteCareCardList(value: unknown, careCards: string[]): string[] {
+  if (!Array.isArray(value)) return [];
+
+  const uniqueFavorites = new Set<string>();
+  for (const favorite of value) {
+    if (typeof favorite !== "string") continue;
+
+    const normalizedFavorite = favorite.trim();
+    if (normalizedFavorite && careCards.includes(normalizedFavorite)) {
+      uniqueFavorites.add(normalizedFavorite);
+    }
+  }
+
+  return [...uniqueFavorites];
 }
 
 function normalizeFeelingHistory(value: Record<string, unknown>): FeelingHistoryEntry[] {

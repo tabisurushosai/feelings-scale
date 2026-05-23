@@ -7,6 +7,7 @@ import {
   type FeelingLevel,
   type FeelingLevelId,
   type FeelingLevelLabelMap,
+  type CareCardViewItem,
   type FeelingsState,
   addCareCard,
   clearFeelingHistory,
@@ -25,6 +26,7 @@ import {
   setParentPin,
   setFeelingHistoryRetention,
   startPremiumTrial,
+  toggleCareCardFavorite,
   updateCareCard,
 } from "./core/feelings";
 import type { CareCardPresetMap } from "./core/careCards";
@@ -40,6 +42,10 @@ interface PopupMessages {
   cardInputAria: (index: number) => string;
   deleteButton: string;
   deleteCardAria: (cardText: string) => string;
+  favoriteButton: string;
+  unfavoriteButton: string;
+  favoriteCareCardAria: (cardText: string) => string;
+  unfavoriteCareCardAria: (cardText: string) => string;
   addCardPlaceholder: string;
   addCardAria: string;
   addButton: string;
@@ -114,6 +120,10 @@ function createPopupMessages(): PopupMessages {
     cardInputAria: (index) => t("cardInputAria", String(index)),
     deleteButton: t("deleteButton"),
     deleteCardAria: (cardText) => t("deleteCardAria", cardText),
+    favoriteButton: t("favoriteButton"),
+    unfavoriteButton: t("unfavoriteButton"),
+    favoriteCareCardAria: (cardText) => t("favoriteCareCardAria", cardText),
+    unfavoriteCareCardAria: (cardText) => t("unfavoriteCareCardAria", cardText),
     addCardPlaceholder: t("addCardPlaceholder"),
     addCardAria: t("addCardAria"),
     addButton: t("addButton"),
@@ -325,9 +335,9 @@ function renderBreathingGuide(guide: BreathingGuideViewModel, selectedLevel: Fee
   return panel;
 }
 
-function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCards: boolean): HTMLElement {
+function renderCards(levelId: FeelingLevelId, careCards: CareCardViewItem[], canEditCareCards: boolean): HTMLElement {
   if (!canEditCareCards) {
-    if (cardTexts.length === 0) {
+    if (careCards.length === 0) {
       const emptyMessage = document.createElement("p");
       emptyMessage.className = "empty-state";
       emptyMessage.textContent = messages.emptyCareCards;
@@ -337,10 +347,16 @@ function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCa
     const list = document.createElement("ul");
     list.className = "care-card-list";
 
-    for (const cardText of cardTexts) {
+    for (const careCard of careCards) {
       const item = document.createElement("li");
       item.className = "care-card-readonly";
-      item.textContent = cardText;
+      item.dataset.favorite = String(careCard.isFavorite);
+
+      const cardText = document.createElement("span");
+      cardText.textContent = careCard.text;
+
+      const favoriteButton = renderFavoriteButton(levelId, careCard);
+      item.append(cardText, favoriteButton);
       list.append(item);
     }
 
@@ -350,36 +366,39 @@ function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCa
   const editor = document.createElement("div");
   editor.className = "card-editor";
 
-  if (cardTexts.length === 0) {
+  if (careCards.length === 0) {
     const emptyMessage = document.createElement("p");
     emptyMessage.className = "empty-state";
     emptyMessage.textContent = messages.emptyCareCardsEdit;
     editor.append(emptyMessage);
   }
 
-  for (const [index, cardText] of cardTexts.entries()) {
+  for (const careCard of careCards) {
     const row = document.createElement("div");
     row.className = "care-card";
+    row.dataset.favorite = String(careCard.isFavorite);
 
     const input = document.createElement("input");
     input.className = "card-input";
     input.type = "text";
-    input.value = cardText;
-    input.setAttribute("aria-label", messages.cardInputAria(index + 1));
+    input.value = careCard.text;
+    input.setAttribute("aria-label", messages.cardInputAria(careCard.originalIndex + 1));
     input.addEventListener("change", () => {
-      void handleCareCardUpdate(levelId, index, input.value);
+      void handleCareCardUpdate(levelId, careCard.originalIndex, input.value);
     });
+
+    const favoriteButton = renderFavoriteButton(levelId, careCard);
 
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "card-delete";
     deleteButton.textContent = messages.deleteButton;
-    deleteButton.setAttribute("aria-label", messages.deleteCardAria(cardText));
+    deleteButton.setAttribute("aria-label", messages.deleteCardAria(careCard.text));
     deleteButton.addEventListener("click", () => {
-      void handleCareCardRemove(levelId, index);
+      void handleCareCardRemove(levelId, careCard.originalIndex);
     });
 
-    row.append(input, deleteButton);
+    row.append(input, favoriteButton, deleteButton);
     editor.append(row);
   }
 
@@ -405,6 +424,26 @@ function renderCards(levelId: FeelingLevelId, cardTexts: string[], canEditCareCa
 
   editor.append(addForm);
   return editor;
+}
+
+function renderFavoriteButton(levelId: FeelingLevelId, careCard: CareCardViewItem): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "card-favorite";
+  button.dataset.favorite = String(careCard.isFavorite);
+  button.textContent = careCard.isFavorite ? messages.unfavoriteButton : messages.favoriteButton;
+  button.setAttribute(
+    "aria-label",
+    careCard.isFavorite
+      ? messages.unfavoriteCareCardAria(careCard.text)
+      : messages.favoriteCareCardAria(careCard.text),
+  );
+  button.setAttribute("aria-pressed", String(careCard.isFavorite));
+  button.addEventListener("click", () => {
+    void handleCareCardFavoriteToggle(levelId, careCard.originalIndex);
+  });
+
+  return button;
 }
 
 function renderCareCardUndoNotice(levelId: FeelingLevelId): HTMLElement | null {
@@ -802,10 +841,19 @@ function render(): void {
       border-radius: 16px;
       background: #fffefa;
       padding: 13px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
       font-size: 16px;
       font-weight: 700;
       line-height: 1.4;
       box-shadow: 0 6px 14px rgba(66, 52, 33, 0.07);
+    }
+    .care-card-readonly[data-favorite="true"],
+    .care-card[data-favorite="true"] {
+      background: #fff8e3;
+      border-color: #d9a93b;
     }
     .empty-state {
       margin: 0;
@@ -826,7 +874,7 @@ function render(): void {
       background: #fffefa;
       padding: 10px;
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: 1fr auto auto;
       gap: 8px;
       align-items: center;
     }
@@ -843,6 +891,7 @@ function render(): void {
       background: #ffffff;
     }
     .card-delete,
+    .card-favorite,
     .card-add {
       min-height: 44px;
       border: 2px solid #d7c6a8;
@@ -853,6 +902,17 @@ function render(): void {
       font-size: 14px;
       font-weight: 700;
       cursor: pointer;
+    }
+    .card-favorite {
+      width: 44px;
+      padding: 0;
+      color: #6f5200;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .card-favorite[data-favorite="true"] {
+      border-color: #d9a93b;
+      background: #ffe9a8;
     }
     .card-add-form {
       display: grid;
@@ -1345,6 +1405,14 @@ async function handleCareCardRemove(levelId: FeelingLevelId, cardIndex: number):
 
   state = removeCareCard(state, levelId, cardIndex);
   pendingCareCardUndo = { levelId, cardIndex, cardText };
+  render();
+  await saveFeelingsState(store, state);
+}
+
+async function handleCareCardFavoriteToggle(levelId: FeelingLevelId, cardIndex: number): Promise<void> {
+  parentModeMessage = "";
+  pendingCareCardUndo = null;
+  state = toggleCareCardFavorite(state, levelId, cardIndex);
   render();
   await saveFeelingsState(store, state);
 }
