@@ -32,6 +32,7 @@ export interface FeelingsViewModel {
   careCards: CareCardViewItem[];
   shouldKeepHistory: boolean;
   feelingHistory: FeelingHistoryItem[];
+  recentTrend: FeelingTrendSummary;
   hasHistory: boolean;
   mode: FeelingsMode;
   hasParentPin: boolean;
@@ -60,6 +61,18 @@ export interface FeelingHistoryEntry {
 
 export interface FeelingHistoryItem extends FeelingHistoryEntry {
   level: FeelingLevel;
+}
+
+export interface FeelingTrendSummary {
+  total: number;
+  mostSelectedLevel: FeelingLevel | null;
+  items: FeelingTrendItem[];
+}
+
+export interface FeelingTrendItem {
+  level: FeelingLevel;
+  count: number;
+  percent: number;
 }
 
 export interface PremiumState {
@@ -434,6 +447,7 @@ export function createFeelingsViewModel(
     ),
     shouldKeepHistory: state.shouldKeepHistory,
     feelingHistory,
+    recentTrend: createFeelingTrendSummary(feelingHistory, levels),
     hasHistory: feelingHistory.length > 0,
     mode: state.mode,
     hasParentPin: state.parentPin !== null,
@@ -454,6 +468,41 @@ function createCareCardViewItems(
       isFavorite: favoriteCareCards.includes(text),
     }))
     .sort((a, b) => Number(b.isFavorite) - Number(a.isFavorite) || a.originalIndex - b.originalIndex);
+}
+
+export function createFeelingTrendSummary(
+  feelingHistory: FeelingHistoryItem[],
+  levels: FeelingLevel[],
+  maxEntries = 10,
+): FeelingTrendSummary {
+  const recentHistory = feelingHistory.slice(-maxEntries);
+  const total = recentHistory.length;
+  const counts = new Map<FeelingLevelId, number>();
+
+  for (const historyItem of recentHistory) {
+    counts.set(historyItem.levelId, (counts.get(historyItem.levelId) ?? 0) + 1);
+  }
+
+  const items = levels.map<FeelingTrendItem>((level) => {
+    const count = counts.get(level.id) ?? 0;
+    return {
+      level,
+      count,
+      percent: total > 0 ? Math.round((count / total) * 100) : 0,
+    };
+  });
+
+  const mostSelected = items.reduce<FeelingTrendItem | null>((currentMost, item) => {
+    if (item.count === 0) return currentMost;
+    if (!currentMost || item.count > currentMost.count) return item;
+    return currentMost;
+  }, null);
+
+  return {
+    total,
+    mostSelectedLevel: mostSelected?.level ?? null,
+    items,
+  };
 }
 
 export function createPremiumViewModel(

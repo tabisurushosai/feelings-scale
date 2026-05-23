@@ -64,6 +64,10 @@ interface PopupMessages {
   selectedHeading: (face: string, levelLabel: string) => string;
   careCardsAria: string;
   historyAria: string;
+  trendAria: string;
+  trendTitle: string;
+  trendMostSelected: (levelLabel: string) => string;
+  trendCount: (count: number, percent: number) => string;
   keepHistory: string;
   clearHistory: string;
   confirmClearHistory: string;
@@ -142,6 +146,10 @@ function createPopupMessages(): PopupMessages {
     selectedHeading: (face, levelLabel) => t("selectedHeading", [face, levelLabel]),
     careCardsAria: t("careCardsAria"),
     historyAria: t("historyAria"),
+    trendAria: t("trendAria"),
+    trendTitle: t("trendTitle"),
+    trendMostSelected: (levelLabel) => t("trendMostSelected", levelLabel),
+    trendCount: (count, percent) => t("trendCount", [String(count), String(percent)]),
     keepHistory: t("keepHistory"),
     clearHistory: t("clearHistory"),
     confirmClearHistory: t("confirmClearHistory"),
@@ -478,6 +486,7 @@ function render(): void {
     careCards,
     shouldKeepHistory,
     feelingHistory,
+    recentTrend,
     hasHistory,
     mode,
     hasParentPin,
@@ -1012,6 +1021,65 @@ function render(): void {
       font-size: 12px;
       line-height: 1.35;
     }
+    .trend-panel {
+      display: grid;
+      gap: 8px;
+      border: 2px solid #d9eadb;
+      border-radius: 16px;
+      background: #fbfff9;
+      padding: 10px;
+    }
+    .trend-title,
+    .trend-most {
+      margin: 0;
+      color: #243326;
+      line-height: 1.35;
+    }
+    .trend-title {
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .trend-most {
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .trend-list {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .trend-item {
+      display: grid;
+      grid-template-columns: auto minmax(68px, 1fr) auto;
+      gap: 7px;
+      align-items: center;
+      color: #2f2b25;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+    .trend-label {
+      overflow-wrap: anywhere;
+    }
+    .trend-bar {
+      height: 10px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e9e4d9;
+    }
+    .trend-bar span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--trend-color);
+    }
+    .trend-count {
+      color: #4f463c;
+      font-size: 11px;
+      white-space: nowrap;
+    }
   `;
 
   const shell = document.createElement("main");
@@ -1081,6 +1149,8 @@ function render(): void {
     premiumRequired.textContent = messages.premiumHistoryRequired;
     historySection.append(premiumRequired);
   } else if (hasHistory) {
+    if (mode === "parent") historySection.append(renderTrendPanel(recentTrend));
+
     const historyList = document.createElement("ul");
     historyList.className = "history-list";
 
@@ -1118,6 +1188,57 @@ function render(): void {
   shell.append(cardsSection, historySection);
   app.append(style, shell);
   focusPendingLevelButton();
+}
+
+function renderTrendPanel(
+  recentTrend: ReturnType<typeof createFeelingsViewModel>["recentTrend"],
+): HTMLElement {
+  const panel = document.createElement("section");
+  panel.className = "trend-panel";
+  panel.setAttribute("aria-label", messages.trendAria);
+
+  const title = document.createElement("p");
+  title.className = "trend-title";
+  title.textContent = messages.trendTitle;
+  panel.append(title);
+
+  if (recentTrend.mostSelectedLevel) {
+    const most = document.createElement("p");
+    most.className = "trend-most";
+    most.textContent = messages.trendMostSelected(recentTrend.mostSelectedLevel.label);
+    panel.append(most);
+  }
+
+  const list = document.createElement("ul");
+  list.className = "trend-list";
+
+  for (const trendItem of recentTrend.items) {
+    const item = document.createElement("li");
+    item.className = "trend-item";
+
+    const label = document.createElement("span");
+    label.className = "trend-label";
+    label.textContent = `${trendItem.level.face} ${trendItem.level.label}`;
+
+    const bar = document.createElement("span");
+    bar.className = "trend-bar";
+    bar.style.setProperty("--trend-color", trendItem.level.color);
+    bar.setAttribute("aria-hidden", "true");
+
+    const barFill = document.createElement("span");
+    barFill.style.width = `${trendItem.percent}%`;
+    bar.append(barFill);
+
+    const count = document.createElement("span");
+    count.className = "trend-count";
+    count.textContent = messages.trendCount(trendItem.count, trendItem.percent);
+
+    item.append(label, bar, count);
+    list.append(item);
+  }
+
+  panel.append(list);
+  return panel;
 }
 
 function renderPremiumPanel(premium: ReturnType<typeof createFeelingsViewModel>["premium"]): HTMLElement {
