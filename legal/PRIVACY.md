@@ -1,5 +1,5 @@
 # プライバシーポリシー / Privacy Policy — きもちものさし (Feelings Scale)
 ## 日本語
-本拡張機能は個人情報を一切収集・送信しません。すべてのデータは chrome.storage.local 内にのみ保存され、外部サーバーへの通信は行いません(完全オフライン)。トラッキング・広告・第三者提供はありません。拡張機能を削除すると保存データも削除されます。
+本拡張機能は、開発者のサーバーへ個人情報を収集・送信しません。気持ちの選択、任意のふりかえり履歴、対処カード、保護者PIN、Premium状態は chrome.storage.local にのみ保存されます。拡張機能本体はバックグラウンド通信やトラッキング、広告、第三者提供を行いません。ユーザーが購入リンクを押した場合のみ、ブラウザーで Stripe の外部ページが開きます。拡張機能を削除すると保存データも削除されます。
 ## English
-This extension collects/transmits no personal data. All data is stored only in chrome.storage.local; it makes no network requests and works fully offline. No tracking, ads, or sharing. Uninstalling removes all stored data.
+This extension does not collect or transmit personal data to the developer's servers. Feeling selections, optional reflection history, coping cards, parent PIN, and Premium state are stored only in chrome.storage.local. The extension itself does not make background network requests and does not use tracking, ads, or third-party sharing. If the user clicks the purchase link, the browser opens an external Stripe page. Uninstalling removes all stored data.
