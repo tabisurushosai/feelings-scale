@@ -149,27 +149,22 @@ export function normalizeFeelingsState(
 ): FeelingsState {
   const initialState = createInitialFeelingsState(defaultCareCardsByLevel);
 
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "selectedLevelId" in value &&
-    isFeelingLevelId(value.selectedLevelId)
-  ) {
-    return {
-      selectedLevelId: value.selectedLevelId,
-      careCardsByLevel: normalizeCareCardsByLevel(value, defaultCareCardsByLevel),
-      shouldKeepHistory:
-        "shouldKeepHistory" in value && typeof value.shouldKeepHistory === "boolean"
-          ? value.shouldKeepHistory
-          : initialState.shouldKeepHistory,
-      feelingHistory: normalizeFeelingHistory(value),
-      mode: normalizeFeelingsMode(value),
-      parentPin: normalizeParentPin(value),
-      premium: normalizePremiumState(value),
-    };
-  }
+  if (!isRecord(value)) return initialState;
 
-  return initialState;
+  return {
+    selectedLevelId: isFeelingLevelId(value.selectedLevelId)
+      ? value.selectedLevelId
+      : initialState.selectedLevelId,
+    careCardsByLevel: normalizeCareCardsByLevel(value, defaultCareCardsByLevel),
+    shouldKeepHistory:
+      typeof value.shouldKeepHistory === "boolean"
+        ? value.shouldKeepHistory
+        : initialState.shouldKeepHistory,
+    feelingHistory: normalizeFeelingHistory(value),
+    mode: normalizeFeelingsMode(value),
+    parentPin: normalizeParentPin(value),
+    premium: normalizePremiumState(value),
+  };
 }
 
 export function selectFeelingLevel(
@@ -423,24 +418,23 @@ function createInitialPremiumState(): PremiumState {
   };
 }
 
-function normalizeFeelingsMode(value: object): FeelingsMode {
-  if (!("mode" in value)) return "child";
+function normalizeFeelingsMode(value: Record<string, unknown>): FeelingsMode {
   return value.mode === "parent" || value.mode === "child" ? value.mode : "child";
 }
 
-function normalizeParentPin(value: object): string | null {
-  if (!("parentPin" in value) || typeof value.parentPin !== "string") return null;
+function normalizeParentPin(value: Record<string, unknown>): string | null {
+  if (typeof value.parentPin !== "string") return null;
 
   const normalizedPin = normalizePinInput(value.parentPin);
   return isValidParentPin(normalizedPin) ? normalizedPin : null;
 }
 
-function normalizePremiumState(value: object): PremiumState {
-  if (!("premium" in value) || typeof value.premium !== "object" || value.premium === null) {
+function normalizePremiumState(value: Record<string, unknown>): PremiumState {
+  if (!isRecord(value.premium)) {
     return createInitialPremiumState();
   }
 
-  const premium = value.premium as Record<string, unknown>;
+  const premium = value.premium;
   const status = normalizePremiumStatus(premium.status);
   const trialStartedAt = typeof premium.trialStartedAt === "string" && isValidIsoDateTime(premium.trialStartedAt)
     ? premium.trialStartedAt
@@ -478,16 +472,17 @@ function normalizePinInput(value: string): string {
 }
 
 function normalizeCareCardsByLevel(
-  value: object,
+  value: Record<string, unknown>,
   defaultCareCardsByLevel: CareCardPresetMap,
 ): CareCardPresetMap {
   const defaults = cloneCareCardsByLevel(defaultCareCardsByLevel);
-  if (!("careCardsByLevel" in value) || typeof value.careCardsByLevel !== "object" || value.careCardsByLevel === null) {
+  if (!isRecord(value.careCardsByLevel)) {
     return defaults;
   }
 
+  const savedCareCardsByLevel = value.careCardsByLevel;
   return feelingLevels.reduce<CareCardPresetMap>((careCardsByLevel, level) => {
-    const savedCards = (value.careCardsByLevel as Record<string, unknown>)[String(level.id)];
+    const savedCards = savedCareCardsByLevel[String(level.id)];
     careCardsByLevel[level.id] = normalizeCareCardList(savedCards, defaultCareCardsByLevel[level.id] ?? getCareCardPresets(level.id));
     return careCardsByLevel;
   }, defaults);
@@ -523,8 +518,8 @@ function normalizeCareCardList(value: unknown, fallback: string[]): string[] {
   return careCards.length > 0 ? careCards : [...fallback];
 }
 
-function normalizeFeelingHistory(value: object): FeelingHistoryEntry[] {
-  if (!("feelingHistory" in value) || !Array.isArray(value.feelingHistory)) return [];
+function normalizeFeelingHistory(value: Record<string, unknown>): FeelingHistoryEntry[] {
+  if (!Array.isArray(value.feelingHistory)) return [];
 
   return value.feelingHistory.filter((entry): entry is FeelingHistoryEntry => {
     if (typeof entry !== "object" || entry === null) return false;
@@ -557,4 +552,8 @@ function getPremiumTrialDaysRemaining(premium: PremiumState, currentAt: string):
   const trialEndsAt = Date.parse(premium.trialStartedAt) + premiumTrialDays * 24 * 60 * 60 * 1000;
   const remainingMilliseconds = trialEndsAt - Date.parse(currentAt);
   return Math.max(0, Math.ceil(remainingMilliseconds / (24 * 60 * 60 * 1000)));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
